@@ -17,7 +17,7 @@ def test_api_root(client: TestClient) -> None:
     r = client.get("/api/v1")
     assert r.status_code == 200
     data = r.json()
-    assert data.get("service") == "Hybrid EDHS Platform API"
+    assert data.get("service") == "DHS Hybrid Plugin Plateform API"
     assert data.get("version") == "v1"
     assert "health" in data
     assert "indicators" in data

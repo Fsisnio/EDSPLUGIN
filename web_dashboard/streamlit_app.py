@@ -1,5 +1,5 @@
 """
-Streamlit MVP for the Hybrid EDHS Platform.
+Streamlit MVP for the DHS Hybrid Plugin Plateform.
 
 Connects to the FastAPI backend to:
 - Upload DHS/EDHS datasets (or create a mock session)
@@ -638,7 +638,7 @@ def render_choropleth(geojson: Dict[str, Any], value_key: str = "value") -> str:
 # -----------------------------------------------------------------------------
 
 st.set_page_config(
-    page_title="EDHS Hybrid Platform",
+    page_title="DHS Hybrid Plugin Plateform",
     page_icon="📊",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -722,7 +722,7 @@ if "edhs_nav_pending" in st.session_state:
 # -----------------------------------------------------------------------------
 # Sidebar: Navigation menu
 # -----------------------------------------------------------------------------
-st.sidebar.markdown("### 📊 EDHS Platform")
+st.sidebar.markdown("### 📊 DHS Hybrid Plugin Plateform")
 st.sidebar.markdown("---")
 
 nav_options = ["🏠 Home", "📖 Onboarding", "📡 DHS Program API", "📂 Microdata Analysis", "📊 Custom Dashboard", "⚙️ Settings"]
@@ -1002,7 +1002,7 @@ else:
 # Main area – header
 st.markdown(
     '<div class="edhs-header">'
-    '<h1>Hybrid EDHS Platform</h1>'
+    '<h1>DHS Hybrid Plugin Plateform</h1>'
     '<p>Explore DHS/EDHS data — fetch indicators, visualize trends, and export for research.</p>'
     '</div>',
     unsafe_allow_html=True,
@@ -1012,7 +1012,7 @@ st.markdown(
 if nav_choice == "🏠 Home":
     st.markdown("### Welcome")
     st.markdown(
-        "The **Hybrid EDHS Platform** lets you explore Demographic and Health Survey (DHS) data: "
+        "The **DHS Hybrid Plugin Plateform** lets you explore Demographic and Health Survey (DHS) data: "
         "fetch indicators from the DHS Program API, visualize trends, compute from microdata, and export for research."
     )
     col1, col2, col3 = st.columns(3)
@@ -1048,7 +1048,7 @@ if nav_choice == "🏠 Home":
     st.stop()
 
 elif nav_choice == "📖 Onboarding":
-    st.markdown("## 📖 Welcome to the Hybrid EDHS Platform")
+    st.markdown("## 📖 Welcome to the DHS Hybrid Plugin Plateform")
     st.markdown(
         "This platform helps you explore **Demographic and Health Survey (DHS)** data: "
         "fetch indicators from the DHS Program API, visualize trends, compute from microdata, and export for research."

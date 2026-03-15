@@ -1,7 +1,7 @@
 [project]
 name = "edhs-core"
 version = "0.1.0"
-description = "Hybrid EDHS Platform API"
+description = "DHS Hybrid Plugin Plateform API"
 readme = "README.md"
 requires-python = ">=3.11"
 

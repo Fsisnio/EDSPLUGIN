@@ -1,5 +1,5 @@
 """
-QGIS plugin entry point for the Hybrid EDHS Platform.
+QGIS plugin entry point for the DHS Hybrid Plugin Plateform.
 
 This plugin connects a running local FastAPI backend (EDHS core engine)
 to QGIS, allowing users to:
