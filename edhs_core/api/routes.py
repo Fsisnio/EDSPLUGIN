@@ -5,6 +5,7 @@ from typing import Optional
 import pandas as pd
 import pyreadstat
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+
 from ..indicators import BaseIndicator
 from ..indicators.registry import get_indicator_class
 from ..security.dependencies import get_current_tenant, require_active_subscription
@@ -203,6 +204,14 @@ async def create_mock_session(
                 apply_value_formats=False,
                 formats_as_category=False,
             )
+            # Recode v313 (current method) to modern_method for builtin indicators.
+            # DHS v313: 0=no method, 1-9=modern methods (pill, IUD, injectables, etc.)
+            df = df.copy()
+            if "v313" in df.columns and "modern_method" not in df.columns:
+                df["modern_method"] = ((df["v313"] >= 1) & (df["v313"] <= 9)).astype(int)
+            # Add admin1_code from v024 for spatial aggregation (matches ADM1_1, ADM1_2, ...)
+            if "v024" in df.columns and "admin1_code" not in df.columns:
+                df["admin1_code"] = "ADM1_" + df["v024"].astype(str)
             session_id = await session_manager.create_session_from_dataframe(
                 tenant_id=tenant_id,
                 df=df,

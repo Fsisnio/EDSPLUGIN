@@ -293,7 +293,7 @@ class SessionManager:
                 ) from None
         else:
             # Use URL path or default extension
-            from urllib.parse import urlparse, unquote
+            from urllib.parse import unquote, urlparse
 
             path = unquote(urlparse(dataset_url).path or "")
             base = path.split("/")[-1] or "dataset"

@@ -5,7 +5,7 @@ Fetches indicators, countries, surveys, and indicator data.
 """
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 import httpx
 
