@@ -1,0 +1,18 @@
+[general]
+name=EDHS Hybrid Plugin
+description=Connects the Hybrid EDHS FastAPI backend with QGIS for DHS/EDHS indicator choropleths.
+version=0.1.0
+qgisMinimumVersion=3.16
+author=Hybrid EDHS Platform
+email=you@example.com
+about=Upload DHS/EDHS datasets to a local FastAPI backend, compute indicators, aggregate by admin areas, and render choropleth maps directly in QGIS.
+category=Analysis
+experimental=True
+deprecated=False
+
+[documentation]
+homepage=https://example.org/edhs-hybrid
+
+[python]
+plugin_module=edhs_qgis_plugin
+

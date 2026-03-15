@@ -1,0 +1,40 @@
+# Run the EDHS backend and optional Streamlit dashboard.
+# Usage: docker compose up -d
+# API: http://localhost:8000  Docs: http://localhost:8000/docs
+
+services:
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - SECRET_KEY=${SECRET_KEY:-change-me-in-production}
+      - ADMIN_BOUNDARIES_ROOT=${ADMIN_BOUNDARIES_ROOT:-/opt/edhs/admin_boundaries}
+      - TEMP_DATA_DIR=/tmp/edhs_core_sessions
+      - SESSION_TTL_SECONDS=${SESSION_TTL_SECONDS:-3600}
+    volumes:
+      # Mount admin boundaries if you have them locally
+      - ${ADMIN_BOUNDARIES_ROOT:-./data/admin_boundaries}:/opt/edhs/admin_boundaries:ro
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8000/api/v1/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+  dashboard:
+    image: python:3.12-slim
+    working_dir: /app
+    command: >
+      sh -c "pip install -q streamlit requests pandas folium plotly
+      && streamlit run web_dashboard/streamlit_app.py
+      --server.port=8501 --server.address=0.0.0.0"
+    ports:
+      - "8501:8501"
+    environment:
+      - API_BASE_URL=http://api:8000/api/v1
+    volumes:
+      - .:/app
+    depends_on:
+      api:
+        condition: service_healthy

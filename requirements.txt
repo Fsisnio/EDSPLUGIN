@@ -1,0 +1,16 @@
+fastapi
+uvicorn
+pydantic
+pydantic-settings
+pandas
+geopandas
+pyreadstat
+python-multipart
+python-jose
+passlib[bcrypt]
+SQLAlchemy
+psycopg2-binary
+stripe
+prometheus-client
+python-dotenv
+httpx
