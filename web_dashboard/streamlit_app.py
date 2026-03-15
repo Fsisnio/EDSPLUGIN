@@ -102,6 +102,18 @@ except ImportError:
         return None
 
 
+def _format_indicator_value(v: Any) -> str:
+    """Format indicator value for display. DHS values can be proportions (0-1), percentages (0-100), or rates per 1000."""
+    if not isinstance(v, (int, float)) or pd.isna(v):
+        return str(v)
+    v = float(v)
+    if 0 <= v <= 1:
+        return f"{v * 100:.2f}%"
+    if 1 < v <= 100:
+        return f"{v:.1f}%"
+    return f"{v:.1f}"  # Rate per 1000 or similar - no percent sign
+
+
 def _render_dhs_research_ui(
     dhs_data: Dict[str, Any],
     countries: str,
@@ -713,7 +725,7 @@ if "edhs_nav_pending" in st.session_state:
 st.sidebar.markdown("### 📊 EDHS Platform")
 st.sidebar.markdown("---")
 
-nav_options = ["🏠 Home", "📖 Onboarding", "📡 DHS Program API", "📂 Microdata Analysis", "⚙️ Settings"]
+nav_options = ["🏠 Home", "📖 Onboarding", "📡 DHS Program API", "📂 Microdata Analysis", "📊 Custom Dashboard", "⚙️ Settings"]
 if "edhs_nav_page" not in st.session_state:
     st.session_state["edhs_nav_page"] = "🏠 Home"
 
@@ -1013,7 +1025,7 @@ if nav_choice == "🏠 Home":
         st.metric("DHS data loaded", has_dhs, "")
     st.markdown("---")
     st.markdown("#### Quick start")
-    q1, q2, q3 = st.columns(3)
+    q1, q2, q3, q4 = st.columns(4)
     with q1:
         if st.button("📡 Go to DHS Program API", use_container_width=True, key="nav_dhs"):
             st.session_state["edhs_nav_pending"] = "📡 DHS Program API"
@@ -1023,6 +1035,10 @@ if nav_choice == "🏠 Home":
             st.session_state["edhs_nav_pending"] = "📂 Microdata Analysis"
             st.rerun()
     with q3:
+        if st.button("📊 Go to Custom Dashboard", use_container_width=True, key="nav_dash"):
+            st.session_state["edhs_nav_pending"] = "📊 Custom Dashboard"
+            st.rerun()
+    with q4:
         if st.button("⚙️ Go to Settings", use_container_width=True, key="nav_set"):
             st.session_state["edhs_nav_pending"] = "⚙️ Settings"
             st.rerun()
@@ -1055,6 +1071,11 @@ elif nav_choice == "📖 Onboarding":
 - Compute indicators with sampling weights
 - Disaggregate by region, residence, education, wealth
 - Generate choropleth maps in QGIS
+
+**📊 Custom Dashboard**
+- Build a dashboard from DHS API or microdata results
+- Add metrics, charts, and tables as widgets
+- Arrange and view in one place
         """)
     st.markdown("---")
     st.markdown("### Quick start (3 steps)")
@@ -1065,7 +1086,7 @@ elif nav_choice == "📖 Onboarding":
     """)
     st.markdown("---")
     st.markdown("### Get started")
-    ob1, ob2, ob3 = st.columns(3)
+    ob1, ob2, ob3, ob4 = st.columns(4)
     with ob1:
         if st.button("📡 Go to DHS Program API", use_container_width=True, key="onb_nav_dhs"):
             st.session_state["edhs_nav_pending"] = "📡 DHS Program API"
@@ -1075,6 +1096,10 @@ elif nav_choice == "📖 Onboarding":
             st.session_state["edhs_nav_pending"] = "📂 Microdata Analysis"
             st.rerun()
     with ob3:
+        if st.button("📊 Go to Custom Dashboard", use_container_width=True, key="onb_nav_dash"):
+            st.session_state["edhs_nav_pending"] = "📊 Custom Dashboard"
+            st.rerun()
+    with ob4:
         if st.button("⚙️ Go to Settings", use_container_width=True, key="onb_nav_set"):
             st.session_state["edhs_nav_pending"] = "⚙️ Settings"
             st.rerun()
@@ -1153,6 +1178,250 @@ elif nav_choice == "📡 DHS Program API":
                 cols = [c for c in ["IndicatorId", "ShortName", "Label"] if c in sample_df.columns]
                 if cols:
                     st.dataframe(sample_df[cols], use_container_width=True)
+    st.stop()
+
+elif nav_choice == "📊 Custom Dashboard":
+    st.markdown("## 📊 Custom Dashboard")
+    st.caption(
+        "Build a custom dashboard by adding widgets from your DHS API data or microdata results. "
+        "Widgets are saved for this session."
+    )
+
+    # Initialize dashboard state
+    if "edhs_dashboard_widgets" not in st.session_state:
+        st.session_state["edhs_dashboard_widgets"] = []
+
+    widgets = st.session_state["edhs_dashboard_widgets"]
+
+    # --- Builder ---
+    with st.expander("➕ Add widget", expanded=len(widgets) == 0):
+        data_sources: List[tuple] = []
+        if st.session_state.get("edhs_dhs_api_data"):
+            data_sources.append(("DHS Program API data", "dhs_api"))
+        if st.session_state.get("edhs_last_result"):
+            data_sources.append(("Microdata indicator (last result)", "microdata_indicator"))
+        if st.session_state.get("edhs_last_grouped"):
+            data_sources.append(("Microdata disaggregated (by group)", "microdata_grouped"))
+        if st.session_state.get("edhs_last_multi"):
+            data_sources.append(("Microdata multiple indicators", "microdata_multi"))
+
+        if not data_sources:
+            st.info("Load data first: fetch from **DHS Program API** or compute indicators in **Microdata Analysis**.")
+        else:
+            ds_label = st.selectbox(
+                "Data source",
+                options=[x[0] for x in data_sources],
+                key="dash_add_ds",
+            )
+            ds_key = next(k for lbl, k in data_sources if lbl == ds_label)
+
+            add_col1, add_col2, add_col3 = st.columns(3)
+            with add_col1:
+                widget_type = st.selectbox(
+                    "Widget type",
+                    ["Metric", "Bar chart", "Table", "Gauge"],
+                    key="dash_add_type",
+                )
+            # Build metric/indicator options based on data source AND widget type
+            metric_options: List[tuple] = []  # (label, key)
+            if ds_key == "dhs_api":
+                dhs_data = st.session_state["edhs_dhs_api_data"]
+                df_ds = get_dhs_dataframe(dhs_data) if _DHS_RESEARCH_AVAILABLE else pd.DataFrame(dhs_data.get("Data", []))
+                if not df_ds.empty and "Value" in df_ds.columns:
+                    ind_col = "IndicatorId" if "IndicatorId" in df_ds.columns else "Indicator"
+                    ctry_col = "CountryName" if "CountryName" in df_ds.columns else None
+                    yr_col = "SurveyYear" if "SurveyYear" in df_ds.columns else None
+                    # Single-value options for Metric/Gauge/Table
+                    single_opts: List[tuple] = []
+                    for _, row in df_ds.iterrows():
+                        ind = str(row.get(ind_col, ""))
+                        ctry = str(row.get(ctry_col, "")) if ctry_col else ""
+                        yr = str(int(row.get(yr_col, ""))) if yr_col and pd.notna(row.get(yr_col)) else ""
+                        parts = [ind, ctry, yr]
+                        label = " | ".join(p for p in parts if p)
+                        key = f"{ind}||{ctry}||{yr}"
+                        if (label, key) not in single_opts:
+                            single_opts.append((label, key))
+                    # Bar options for Bar chart
+                    bar_opts: List[tuple] = []
+                    for ind in df_ds[ind_col].unique()[:20]:
+                        bar_opts.append((f"{ind} (by country)", f"bar_country||{ind}"))
+                        bar_opts.append((f"{ind} (by year)", f"bar_year||{ind}"))
+                    # Show coherent options per widget type
+                    if widget_type == "Bar chart":
+                        metric_options = bar_opts
+                    else:
+                        metric_options = single_opts
+            elif ds_key == "microdata_multi":
+                rows = st.session_state["edhs_last_multi"]
+                for i, r in enumerate(rows):
+                    name = r.get("name", r.get("indicator_id", f"Indicator {i}"))
+                    metric_options.append((name, r.get("indicator_id", str(i))))
+            elif ds_key == "microdata_grouped":
+                metric_options = [
+                    ("Estimate by group", "estimate"),
+                    ("Population N by group", "population_n"),
+                ]
+            elif ds_key == "microdata_indicator":
+                metric_options = [("Last computed value", "value")]
+
+            with add_col2:
+                metric_label = ""
+                if metric_options:
+                    metric_label = st.selectbox(
+                        "Metric / indicator",
+                        options=[x[0] for x in metric_options],
+                        key="dash_add_metric",
+                        help="Choose which metric or indicator to display.",
+                    )
+                    metric_key = next(k for lbl, k in metric_options if lbl == metric_label)
+                else:
+                    metric_key = ""
+            with add_col3:
+                widget_title = st.text_input("Title (optional)", placeholder="e.g. Contraception rate", key="dash_add_title")
+
+            if st.button("Add widget", type="primary", key="dash_add_btn"):
+                import uuid
+                display_title = widget_title or (metric_label if metric_options else f"Widget {len(widgets) + 1}")
+                widgets.append({
+                    "id": str(uuid.uuid4())[:8],
+                    "data_source": ds_key,
+                    "widget_type": widget_type.lower().replace(" ", "_"),
+                    "title": display_title,
+                    "metric_key": metric_key if metric_options else "",
+                })
+                st.rerun()
+
+    # --- Remove widget (check session state for pending removal) ---
+    if "edhs_dash_remove_id" in st.session_state:
+        rid = st.session_state.pop("edhs_dash_remove_id")
+        st.session_state["edhs_dashboard_widgets"] = [x for x in widgets if x["id"] != rid]
+        st.rerun()
+
+    # --- Remove widget ---
+    if widgets:
+        st.markdown("---")
+        st.markdown("### Dashboard")
+        for w in widgets:
+            col_a, col_b = st.columns([4, 1])
+            with col_a:
+                st.caption(f"**{w['title']}** — {w['widget_type']} from {w['data_source']}")
+            with col_b:
+                if st.button("🗑 Remove", key=f"dash_rm_{w['id']}"):
+                    st.session_state["edhs_dash_remove_id"] = w["id"]
+                    st.rerun()
+
+        # --- Render widgets in grid ---
+        st.markdown("---")
+        cols = st.columns(min(3, len(widgets)))
+        for i, w in enumerate(widgets):
+            with cols[i % 3]:
+                try:
+                    metric_key = w.get("metric_key", "")
+
+                    if w["data_source"] == "dhs_api":
+                        dhs_data = st.session_state["edhs_dhs_api_data"]
+                        df_full = get_dhs_dataframe(dhs_data) if _DHS_RESEARCH_AVAILABLE else pd.DataFrame(dhs_data.get("Data", []))
+                        # Filter by selected metric/indicator
+                        if metric_key.startswith("bar_country||"):
+                            ind_id = metric_key.split("||", 1)[1]
+                            ind_col = "IndicatorId" if "IndicatorId" in df_full.columns else "Indicator"
+                            df = df_full[df_full[ind_col] == ind_id].copy() if ind_col in df_full.columns else df_full
+                            if "CountryName" in df.columns:
+                                df = df.groupby("CountryName", as_index=False).agg({"Value": "mean"})
+                                df = df.rename(columns={"CountryName": "group_value", "Value": "estimate"})
+                        elif metric_key.startswith("bar_year||"):
+                            ind_id = metric_key.split("||", 1)[1]
+                            ind_col = "IndicatorId" if "IndicatorId" in df_full.columns else "Indicator"
+                            df = df_full[df_full[ind_col] == ind_id].copy() if ind_col in df_full.columns else df_full
+                            if "SurveyYear" in df.columns:
+                                df = df.groupby("SurveyYear", as_index=False).agg({"Value": "mean"})
+                                df = df.rename(columns={"SurveyYear": "group_value", "Value": "estimate"})
+                        elif "||" in metric_key:
+                            parts = metric_key.split("||")
+                            ind_col = "IndicatorId" if "IndicatorId" in df_full.columns else "Indicator"
+                            mask = df_full[ind_col] == parts[0] if ind_col in df_full.columns else pd.Series([True] * len(df_full))
+                            if len(parts) > 1 and parts[1] and "CountryName" in df_full.columns:
+                                mask = mask & (df_full["CountryName"] == parts[1])
+                            if len(parts) > 2 and parts[2] and "SurveyYear" in df_full.columns:
+                                mask = mask & (df_full["SurveyYear"].astype(str) == parts[2])
+                            df = df_full[mask].head(1)
+                        else:
+                            df = df_full
+                    elif w["data_source"] == "microdata_indicator":
+                        res = st.session_state["edhs_last_result"]
+                        df = pd.DataFrame([{"value": res.get("value"), "name": res.get("metadata", {}).get("name", "Value")}])
+                    elif w["data_source"] == "microdata_grouped":
+                        gr = st.session_state["edhs_last_grouped"]
+                        df = pd.DataFrame(gr.get("rows", []))
+                        if metric_key == "population_n" and "population_n" in df.columns:
+                            df = df[["group_value", "population_n"]].rename(columns={"population_n": "estimate"})
+                    elif w["data_source"] == "microdata_multi":
+                        rows = st.session_state["edhs_last_multi"]
+                        if metric_key:
+                            rows = [r for r in rows if r.get("indicator_id") == metric_key]
+                        df = pd.DataFrame(rows) if rows else pd.DataFrame()
+                    else:
+                        df = pd.DataFrame()
+
+                    if df.empty:
+                        st.warning(f"No data for {w['title']}")
+                        continue
+
+                    st.markdown(f"**{w['title']}**")
+                    if w["widget_type"] == "metric":
+                        if "value" in df.columns:
+                            v = df["value"].iloc[0] if len(df) > 0 else 0
+                            st.metric(w["title"], _format_indicator_value(v), "")
+                        elif "Value" in df.columns:
+                            v = df["Value"].iloc[0] if len(df) > 0 else 0
+                            st.metric(w["title"], _format_indicator_value(v), "")
+                        elif "estimate" in df.columns:
+                            v = df["estimate"].iloc[0] if len(df) > 0 else 0
+                            st.metric(w["title"], _format_indicator_value(v), "")
+                        else:
+                            st.metric(w["title"], str(df.iloc[0, 0]), "")
+                    elif w["widget_type"] == "bar_chart":
+                        # Bar chart needs multiple rows; if single-row (wrong option), show as metric
+                        if len(df) < 2 and "Value" in df.columns:
+                            v = df["Value"].iloc[0] if len(df) > 0 else 0
+                            st.metric(w["title"], _format_indicator_value(v), "")
+                        else:
+                            x_col = "group_value" if "group_value" in df.columns else (df.columns[0] if len(df.columns) > 0 else None)
+                            y_col = "estimate" if "estimate" in df.columns else ("Value" if "Value" in df.columns else ("value" if "value" in df.columns else (df.columns[1] if len(df.columns) > 1 else None)))
+                            if x_col and y_col:
+                                try:
+                                    import plotly.graph_objects as go
+                                    fig = go.Figure(data=[go.Bar(x=df[x_col].astype(str), y=df[y_col], marker_color="#0d9488")])
+                                    fig.update_layout(margin=dict(l=20, r=20, t=30, b=40), height=220)
+                                    st.plotly_chart(fig, use_container_width=True, key=f"dash_bar_{w['id']}")
+                                except Exception:
+                                    st.dataframe(df.head(10), use_container_width=True)
+                            else:
+                                st.dataframe(df.head(10), use_container_width=True)
+                    elif w["widget_type"] == "gauge":
+                        v = df["value"].iloc[0] if "value" in df.columns and len(df) > 0 else (df["Value"].iloc[0] if "Value" in df.columns and len(df) > 0 else (df["estimate"].iloc[0] if "estimate" in df.columns and len(df) > 0 else 0))
+                        v = float(v) if isinstance(v, (int, float)) else 0
+                        try:
+                            # Gauge: use 0-100 for percentages, else scale
+                            max_val = 100 if v <= 100 else max(100, v * 1.2)
+                            fig_g = chart_gauge(v, w["title"], min_val=0, max_val=max_val) if _DHS_RESEARCH_AVAILABLE else None
+                            if fig_g:
+                                st.plotly_chart(fig_g, use_container_width=True, key=f"dash_gauge_{w['id']}")
+                            else:
+                                st.metric(w["title"], _format_indicator_value(v), "")
+                        except Exception:
+                            st.metric(w["title"], _format_indicator_value(v), "")
+                    else:
+                        st.dataframe(df.head(15), use_container_width=True)
+                except Exception as e:
+                    st.error(f"Error rendering {w['title']}: {e}")
+
+        if st.button("Clear all widgets", key="dash_clear"):
+            st.session_state["edhs_dashboard_widgets"] = []
+            st.rerun()
+    else:
+        st.info("Add widgets above to build your dashboard. Load data from DHS Program API or Microdata Analysis first.")
     st.stop()
 
 elif nav_choice == "⚙️ Settings":
