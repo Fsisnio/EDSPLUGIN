@@ -645,6 +645,20 @@ st.set_page_config(
 )
 
 # -----------------------------------------------------------------------------
+# Google Analytics (gtag.js)
+# -----------------------------------------------------------------------------
+st.markdown("""
+<!-- Google tag (gtag.js) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-B9F48TD21L"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+  gtag('config', 'G-B9F48TD21L');
+</script>
+""", unsafe_allow_html=True)
+
+# -----------------------------------------------------------------------------
 # Custom CSS – modern, user-friendly styling
 # -----------------------------------------------------------------------------
 st.markdown("""
