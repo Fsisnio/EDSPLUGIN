@@ -739,7 +739,7 @@ if "edhs_nav_pending" in st.session_state:
 st.sidebar.markdown("### 📊 DHS Hybrid Plugin Plateform")
 st.sidebar.markdown("---")
 
-nav_options = ["🏠 Home", "📖 Onboarding", "📡 DHS Program API", "📂 Microdata Analysis", "📊 Custom Dashboard", "⚙️ Settings"]
+nav_options = ["🏠 Home", "📖 Onboarding", "📡 DHS Program API", "📋 DHS Indicators", "📂 Microdata Analysis", "📊 Custom Dashboard", "⚙️ Settings"]
 if "edhs_nav_page" not in st.session_state:
     st.session_state["edhs_nav_page"] = "🏠 Home"
 
@@ -1192,6 +1192,52 @@ elif nav_choice == "📡 DHS Program API":
                 cols = [c for c in ["IndicatorId", "ShortName", "Label"] if c in sample_df.columns]
                 if cols:
                     st.dataframe(sample_df[cols], use_container_width=True)
+    st.stop()
+
+elif nav_choice == "📋 DHS Indicators":
+    st.markdown("## 📋 DHS Indicators Reference")
+    st.caption(
+        "Common DHS Program API indicators with example API calls. "
+        "Use these Indicator IDs in the **DHS Program API** section to fetch data."
+    )
+    indicators_data = [
+        (1, "FE_FRTR_W_TFR", "Total fertility rate (average number of children per woman)", "https://api.dhsprogram.com/rest/dhs/data?indicatorIds=FE_FRTR_W_TFR&countryIds=SN&f=json&apiKey=SPEROF-176817"),
+        (2, "CM_ECMR_C_IMR", "Infant mortality rate (deaths before age 1)", "https://api.dhsprogram.com/rest/dhs/data?indicatorIds=CM_ECMR_C_IMR&countryIds=SN&f=json&apiKey=SPEROF-176817"),
+        (3, "CM_ECMR_C_U5M", "Under-five mortality rate", "https://api.dhsprogram.com/rest/dhs/data?indicatorIds=CM_ECMR_C_U5M&countryIds=SN&f=json&apiKey=SPEROF-176817"),
+        (4, "RH_ANCN_W_ANY", "Women receiving antenatal care (at least one visit)", "https://api.dhsprogram.com/rest/dhs/data?indicatorIds=RH_ANCN_W_ANY&countryIds=SN&f=json&apiKey=SPEROF-176817"),
+        (5, "RH_DEL_W_INST", "Births delivered in a health facility", "https://api.dhsprogram.com/rest/dhs/data?indicatorIds=RH_DEL_W_INST&countryIds=SN&f=json&apiKey=SPEROF-176817"),
+        (6, "RH_DEL_W_SBA", "Births assisted by skilled health personnel", "https://api.dhsprogram.com/rest/dhs/data?indicatorIds=RH_DEL_W_SBA&countryIds=SN&f=json&apiKey=SPEROF-176817"),
+        (7, "FP_CUSE_W_ANY", "Women using any contraceptive method", "https://api.dhsprogram.com/rest/dhs/data?indicatorIds=FP_CUSE_W_ANY&countryIds=SN&f=json&apiKey=SPEROF-176817"),
+        (8, "FP_CUSE_W_MOD", "Women using modern contraceptive methods", "https://api.dhsprogram.com/rest/dhs/data?indicatorIds=FP_CUSE_W_MOD&countryIds=SN&f=json&apiKey=SPEROF-176817"),
+        (9, "FP_UNMN_W_ANY", "Unmet need for family planning", "https://api.dhsprogram.com/rest/dhs/data?indicatorIds=FP_UNMN_W_ANY&countryIds=SN&f=json&apiKey=SPEROF-176817"),
+        (10, "CH_VACC_C_BCG", "Children receiving BCG vaccination", "https://api.dhsprogram.com/rest/dhs/data?indicatorIds=CH_VACC_C_BCG&countryIds=SN&f=json&apiKey=SPEROF-176817"),
+        (11, "CH_VACC_C_DPT3", "Children receiving 3 doses of DPT vaccine", "https://api.dhsprogram.com/rest/dhs/data?indicatorIds=CH_VACC_C_DPT3&countryIds=SN&f=json&apiKey=SPEROF-176817"),
+        (12, "CH_VACC_C_MEAS", "Children vaccinated against measles", "https://api.dhsprogram.com/rest/dhs/data?indicatorIds=CH_VACC_C_MEAS&countryIds=SN&f=json&apiKey=SPEROF-176817"),
+        (13, "CH_DIAR_C_ORS", "Children with diarrhea treated with ORS", "https://api.dhsprogram.com/rest/dhs/data?indicatorIds=CH_DIAR_C_ORS&countryIds=SN&f=json&apiKey=SPEROF-176817"),
+        (14, "NT_STNT_C_HA2", "Children under 5 who are stunted", "https://api.dhsprogram.com/rest/dhs/data?indicatorIds=NT_STNT_C_HA2&countryIds=SN&f=json&apiKey=SPEROF-176817"),
+        (15, "NT_WAST_C_WH2", "Children under 5 who are wasted", "https://api.dhsprogram.com/rest/dhs/data?indicatorIds=NT_WAST_C_WH2&countryIds=SN&f=json&apiKey=SPEROF-176817"),
+        (16, "NT_UNDW_C_WA2", "Children under 5 who are underweight", "https://api.dhsprogram.com/rest/dhs/data?indicatorIds=NT_UNDW_C_WA2&countryIds=SN&f=json&apiKey=SPEROF-176817"),
+        (17, "ML_NETS_H_OWN", "Households owning at least one mosquito net", "https://api.dhsprogram.com/rest/dhs/data?indicatorIds=ML_NETS_H_OWN&countryIds=SN&f=json&apiKey=SPEROF-176817"),
+        (18, "ML_FEVT_C_ADV", "Children with fever for whom advice or treatment was sought", "https://api.dhsprogram.com/rest/dhs/data?indicatorIds=ML_FEVT_C_ADV&countryIds=SN&f=json&apiKey=SPEROF-176817"),
+        (19, "ML_PMAL_C_RDT", "Malaria prevalence (rapid diagnostic test)", "https://api.dhsprogram.com/rest/dhs/data?indicatorIds=ML_PMAL_C_RDT&countryIds=SN&f=json&apiKey=SPEROF-176817"),
+        (20, "HV_HIVP_A_PRE", "HIV prevalence among adults", "https://api.dhsprogram.com/rest/dhs/data?indicatorIds=HV_HIVP_A_PRE&countryIds=SN&f=json&apiKey=SPEROF-176817"),
+    ]
+    df_indicators = pd.DataFrame(
+        indicators_data,
+        columns=["#", "Indicator ID", "Description", "Example API Call"],
+    )
+    st.dataframe(
+        df_indicators,
+        use_container_width=True,
+        column_config={
+            "Example API Call": st.column_config.LinkColumn("Example API Call", display_text="Open URL"),
+        },
+        hide_index=True,
+    )
+    st.caption("Data from [The DHS Program API](https://api.dhsprogram.com). Replace countryIds and apiKey in URLs as needed.")
+    if st.button("📡 Go to DHS Program API", key="ind_ref_to_dhs"):
+        st.session_state["edhs_nav_pending"] = "📡 DHS Program API"
+        st.rerun()
     st.stop()
 
 elif nav_choice == "📊 Custom Dashboard":
