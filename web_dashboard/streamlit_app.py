@@ -713,14 +713,16 @@ if "edhs_nav_pending" in st.session_state:
 st.sidebar.markdown("### 📊 EDHS Platform")
 st.sidebar.markdown("---")
 
-nav_options = ["🏠 Home", "📡 DHS Program API", "📂 Microdata Analysis", "⚙️ Settings"]
+nav_options = ["🏠 Home", "📖 Onboarding", "📡 DHS Program API", "📂 Microdata Analysis", "⚙️ Settings"]
 if "edhs_nav_page" not in st.session_state:
     st.session_state["edhs_nav_page"] = "🏠 Home"
 
+_current = st.session_state.get("edhs_nav_page", nav_options[0])
+_nav_index = nav_options.index(_current) if _current in nav_options else 0
 nav_choice = st.sidebar.radio(
     "**Navigate**",
     nav_options,
-    index=nav_options.index(st.session_state.get("edhs_nav_page", nav_options[0])),
+    index=_nav_index,
     key="edhs_nav_radio",
     label_visibility="collapsed",
 )
@@ -1026,6 +1028,58 @@ if nav_choice == "🏠 Home":
             st.rerun()
     st.markdown("---")
     st.markdown("**Need data?** Use the sidebar to fetch from the DHS Program API, try sample data, or upload a .dta/.sav file.")
+    st.caption("New to the platform? Use **Onboarding** in the sidebar for a step-by-step guide.")
+    st.stop()
+
+elif nav_choice == "📖 Onboarding":
+    st.markdown("## 📖 Welcome to the Hybrid EDHS Platform")
+    st.markdown(
+        "This platform helps you explore **Demographic and Health Survey (DHS)** data: "
+        "fetch indicators from the DHS Program API, visualize trends, compute from microdata, and export for research."
+    )
+    st.markdown("---")
+    st.markdown("### What you can do")
+    col1, col2 = st.columns(2)
+    with col1:
+        st.markdown("""
+**📡 DHS Program API**
+- Fetch aggregated indicators (fertility, child health, maternal health, etc.)
+- No session or microdata required
+- Visualize with heatmaps, time series, radar charts, and more
+- Export to CSV, Excel, Stata, SPSS
+        """)
+    with col2:
+        st.markdown("""
+**📂 Microdata Analysis**
+- Upload .dta or .sav files (DHS/EDHS datasets)
+- Compute indicators with sampling weights
+- Disaggregate by region, residence, education, wealth
+- Generate choropleth maps in QGIS
+        """)
+    st.markdown("---")
+    st.markdown("### Quick start (3 steps)")
+    st.markdown("""
+1. **Check connection** — Open the sidebar and ensure the backend URL is correct (`http://127.0.0.1:8000/api/v1`). Click *Check connection*.
+2. **Get data** — Use **DHS Program API** to fetch indicators, or **Try with sample data** / upload a file for microdata.
+3. **Explore** — View visualizations, export data, and generate citations.
+    """)
+    st.markdown("---")
+    st.markdown("### Get started")
+    ob1, ob2, ob3 = st.columns(3)
+    with ob1:
+        if st.button("📡 Go to DHS Program API", use_container_width=True, key="onb_nav_dhs"):
+            st.session_state["edhs_nav_pending"] = "📡 DHS Program API"
+            st.rerun()
+    with ob2:
+        if st.button("📂 Go to Microdata Analysis", use_container_width=True, key="onb_nav_micro"):
+            st.session_state["edhs_nav_pending"] = "📂 Microdata Analysis"
+            st.rerun()
+    with ob3:
+        if st.button("⚙️ Go to Settings", use_container_width=True, key="onb_nav_set"):
+            st.session_state["edhs_nav_pending"] = "⚙️ Settings"
+            st.rerun()
+    st.markdown("---")
+    st.caption("Data from [The DHS Program](https://dhsprogram.com). See methodology notes in each section.")
     st.stop()
 
 elif nav_choice == "📡 DHS Program API":
