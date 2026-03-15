@@ -151,14 +151,14 @@ def chart_time_series(df: pd.DataFrame) -> Optional[Any]:
         )
 
     fig.update_layout(
-        title="Trends over time",
+        title=dict(text="Trends over time", font=dict(size=16)),
         xaxis_title="Survey year",
         yaxis_title="Value",
         hovermode="x unified",
         height=400,
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
     )
-    return fig
+    return _apply_chart_template(fig, 400)
 
 
 def chart_time_series_safe(df: pd.DataFrame) -> Optional[Any]:
@@ -199,7 +199,7 @@ def chart_country_comparison(df: pd.DataFrame, group_by: str = "Indicator") -> O
         fig.update_layout(title="Values by " + x_col, xaxis_title=x_col, height=400)
 
     fig.update_layout(hovermode="x unified", xaxis_tickangle=-45)
-    return fig
+    return _apply_chart_template(fig, 400)
 
 
 def chart_country_comparison_safe(df: pd.DataFrame) -> Optional[Any]:
@@ -238,8 +238,8 @@ def chart_heatmap(df: pd.DataFrame, mode: str = "country_indicator") -> Optional
         colorscale="Blues",
         hoverongaps=False,
     ))
-    fig.update_layout(title="Heatmap: values by dimension", height=400, xaxis_tickangle=-45)
-    return fig
+    fig.update_layout(title=dict(text="Heatmap: values by dimension", font=dict(size=16)), xaxis_tickangle=-45)
+    return _apply_chart_template(fig, 400)
 
 
 def chart_sankey(df: pd.DataFrame) -> Optional[Any]:
@@ -256,7 +256,7 @@ def chart_sankey(df: pd.DataFrame) -> Optional[Any]:
         return None
     df = df.copy()
     df["source"] = df[src_col].astype(str)
-    df["target"] = df[tgt_col].astype(str).str[:25]
+    df["target"] = df[tgt_col].astype(str).str[:35]
     df["value"] = pd.to_numeric(df["Value"], errors="coerce").fillna(0)
     agg = df.groupby(["source", "target"])["value"].sum().reset_index()
     all_labels = list(dict.fromkeys(agg["source"].tolist() + agg["target"].tolist()))
@@ -269,8 +269,8 @@ def chart_sankey(df: pd.DataFrame) -> Optional[Any]:
             value=agg["value"].tolist(),
         ),
     )])
-    fig.update_layout(title="Sankey: Country → Indicator", height=450)
-    return fig
+    fig.update_layout(title=dict(text="Sankey: Country → Indicator", font=dict(size=16)))
+    return _apply_chart_template(fig, 450)
 
 
 def chart_radar(df: pd.DataFrame, country: Optional[str] = None) -> Optional[Any]:
@@ -285,7 +285,7 @@ def chart_radar(df: pd.DataFrame, country: Optional[str] = None) -> Optional[Any
         df = df[df["CountryName"].astype(str) == str(country)]
     if df.empty:
         return None
-    inds = df["Indicator"].str[:25].tolist()
+    inds = df["Indicator"].str[:40].tolist()
     vals = df["Value"].tolist()
     if len(inds) < 3:
         return None
@@ -295,8 +295,8 @@ def chart_radar(df: pd.DataFrame, country: Optional[str] = None) -> Optional[Any
         fill="toself",
         name=country or "Profile",
     ))
-    fig.update_layout(polar=dict(radialaxis=dict(visible=True)), title="Radar: indicator profile", height=400)
-    return fig
+    fig.update_layout(polar=dict(radialaxis=dict(visible=True)), title=dict(text="Radar: indicator profile", font=dict(size=16)))
+    return _apply_chart_template(fig, 400)
 
 
 def chart_box(df: pd.DataFrame, by: str = "Indicator") -> Optional[Any]:
@@ -313,8 +313,8 @@ def chart_box(df: pd.DataFrame, by: str = "Indicator") -> Optional[Any]:
     if not col:
         return None
     fig = px.box(df, x=col, y="Value", title=f"Box plot by {col}")
-    fig.update_layout(height=400, xaxis_tickangle=-45)
-    return fig
+    fig.update_layout(xaxis_tickangle=-45)
+    return _apply_chart_template(fig, 400)
 
 
 def chart_small_multiples(df: pd.DataFrame, facet_col: str = "CountryName") -> Optional[Any]:
@@ -330,8 +330,8 @@ def chart_small_multiples(df: pd.DataFrame, facet_col: str = "CountryName") -> O
     if not fc or not xc:
         return None
     fig = px.bar(df, x=xc, y="Value", facet_col=fc, facet_col_wrap=3)
-    fig.update_layout(height=500, xaxis_tickangle=-45)
-    return fig
+    fig.update_layout(xaxis_tickangle=-45)
+    return _apply_chart_template(fig, 500)
 
 
 def chart_treemap(df: pd.DataFrame) -> Optional[Any]:
@@ -350,8 +350,7 @@ def chart_treemap(df: pd.DataFrame) -> Optional[Any]:
     if not path_cols:
         return None
     fig = px.treemap(df, path=path_cols, values="Value", title="Treemap: Country → Indicator")
-    fig.update_layout(height=450)
-    return fig
+    return _apply_chart_template(fig, 450)
 
 
 def chart_scatter(df: pd.DataFrame, x_ind: Optional[str] = None, y_ind: Optional[str] = None) -> Optional[Any]:
@@ -368,25 +367,63 @@ def chart_scatter(df: pd.DataFrame, x_ind: Optional[str] = None, y_ind: Optional
     x_col = pivot.columns[0] if not x_ind else next((c for c in pivot.columns if x_ind in str(c)), pivot.columns[0])
     y_col = pivot.columns[1] if not y_ind else next((c for c in pivot.columns if y_ind in str(c)), pivot.columns[min(1, len(pivot.columns) - 1)])
     pivot = pivot.reset_index()
-    fig = px.scatter(pivot, x=x_col, y=y_col, hover_data=pivot.columns.tolist(), title=f"Scatter: {x_col[:20]} vs {y_col[:20]}")
-    fig.update_layout(height=400)
+    fig = px.scatter(pivot, x=x_col, y=y_col, hover_data=pivot.columns.tolist(), title=f"Scatter: {x_col[:30]} vs {y_col[:30]}")
+    return _apply_chart_template(fig, 400)
+
+
+def _apply_chart_template(fig: Any, height: int = 400) -> Any:
+    """Apply consistent styling to Plotly charts."""
+    if fig is None:
+        return fig
+    fig.update_layout(
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(248,250,252,0.8)",
+        font=dict(family="DM Sans, system-ui, sans-serif", size=12, color="#334155"),
+        margin=dict(l=40, r=40, t=50, b=40),
+        height=height,
+        hoverlabel=dict(bgcolor="white", font_size=12, font_family="sans-serif"),
+    )
     return fig
 
 
-def chart_gauge(value: float, title: str = "Indicator", min_val: float = 0, max_val: float = 100) -> Optional[Any]:
-    """Gauge / KPI: single value with range."""
+def chart_gauge(
+    value: float,
+    title: str = "Indicator",
+    min_val: float = 0,
+    max_val: float = 100,
+    subtitle: str = "",
+) -> Optional[Any]:
+    """Gauge / KPI: single value with range. Full title shown; subtitle for context."""
     try:
         import plotly.graph_objects as go
     except ImportError:
         return None
+    # Build title with optional subtitle (country, year)
+    title_text = title
+    if subtitle:
+        title_text = f"{title}<br><sub style='font-size:0.7em;color:#64748b'>{subtitle}</sub>"
     fig = go.Figure(go.Indicator(
         mode="gauge+number",
         value=value,
         domain={"x": [0, 1], "y": [0, 1]},
-        title={"text": title},
-        gauge={"axis": {"range": [min_val, max_val]}, "bar": {"color": "#1f77b4"}},
+        title={"text": title_text, "font": {"size": 13}},
+        number={"font": {"size": 28, "color": "#0f766e"}, "suffix": ""},
+        gauge={
+            "axis": {"range": [min_val, max_val], "tickfont": {"size": 10}},
+            "bar": {"color": "#0d9488", "line": {"width": 0}},
+            "bgcolor": "rgba(241,245,249,0.6)",
+            "borderwidth": 1,
+            "bordercolor": "#e2e8f0",
+            "steps": [],
+            "threshold": {"line": {"color": "#0d9488", "width": 2}, "value": max_val},
+        },
     ))
-    fig.update_layout(height=250)
+    fig.update_layout(
+        height=220,
+        margin=dict(l=30, r=30, t=60, b=20),
+        paper_bgcolor="rgba(0,0,0,0)",
+        font=dict(family="DM Sans, system-ui, sans-serif", size=11, color="#334155"),
+    )
     return fig
 
 
@@ -402,8 +439,7 @@ def chart_animated_time_series(df: pd.DataFrame) -> Optional[Any]:
     if not ind_col:
         return None
     fig = px.line(df, x="SurveyYear", y="Value", color=ind_col, title="Animated time series")
-    fig.update_layout(height=400)
-    return fig
+    return _apply_chart_template(fig, 400)
 
 
 def chart_sunburst(df: pd.DataFrame) -> Optional[Any]:
@@ -431,8 +467,7 @@ def chart_sunburst(df: pd.DataFrame) -> Optional[Any]:
     if not path_cols:
         return None
     fig = px.sunburst(df, path=path_cols, values="Value", title="Sunburst: indicator taxonomy")
-    fig.update_layout(height=450)
-    return fig
+    return _apply_chart_template(fig, 450)
 
 
 # -----------------------------------------------------------------------------

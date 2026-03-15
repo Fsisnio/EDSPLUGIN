@@ -125,6 +125,7 @@ def _render_dhs_research_ui(
         return
 
     # --- Visualizations ---
+    st.markdown("---")
     st.subheader("📊 Visualizations")
     viz_col1, viz_col2 = st.columns(2)
     with viz_col1:
@@ -142,14 +143,26 @@ def _render_dhs_research_ui(
 
     # --- Gauge / KPI cards ---
     if "Value" in df.columns and len(df) >= 1:
-        st.caption("KPI cards (latest values)")
+        st.markdown("#### Key indicators")
+        st.caption("Latest values by indicator and country")
         kpi_vals = df.nlargest(5, "SurveyYear" if "SurveyYear" in df.columns else "Value") if "SurveyYear" in df.columns else df.head(5)
         kpi_cols = st.columns(min(5, len(kpi_vals)))
         for i, (_, row) in enumerate(kpi_vals.iterrows()):
             with kpi_cols[i]:
                 v = row.get("Value", 0)
-                lbl = str(row.get("Indicator", row.get("IndicatorId", "Value")))[:25]
-                fig_g = chart_gauge(float(v), lbl, min_val=0, max_val=max(100, float(v) * 1.2) if isinstance(v, (int, float)) else 100)
+                lbl = str(row.get("Indicator", row.get("IndicatorId", "Value")))
+                subtitle_parts = []
+                if "CountryName" in row and pd.notna(row.get("CountryName")):
+                    subtitle_parts.append(str(row["CountryName"]))
+                if "SurveyYear" in row and pd.notna(row.get("SurveyYear")):
+                    subtitle_parts.append(str(int(row["SurveyYear"])))
+                subtitle = " · ".join(subtitle_parts) if subtitle_parts else ""
+                fig_g = chart_gauge(
+                    float(v), lbl,
+                    min_val=0,
+                    max_val=max(100, float(v) * 1.2) if isinstance(v, (int, float)) else 100,
+                    subtitle=subtitle,
+                )
                 if fig_g:
                     st.plotly_chart(fig_g, use_container_width=True, key=f"{key_prefix}_gauge_{i}")
 
@@ -619,6 +632,102 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
+# -----------------------------------------------------------------------------
+# Custom CSS – modern, user-friendly styling
+# -----------------------------------------------------------------------------
+st.markdown("""
+<style>
+    /* Typography & spacing */
+    @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap');
+    html, body, [data-testid="stAppViewContainer"] { font-family: 'DM Sans', system-ui, sans-serif; }
+    
+    /* Header styling */
+    .edhs-header {
+        background: linear-gradient(135deg, #0d9488 0%, #0f766e 100%);
+        color: white;
+        padding: 1.5rem 2rem;
+        border-radius: 12px;
+        margin-bottom: 1.5rem;
+        box-shadow: 0 4px 14px rgba(13, 148, 136, 0.25);
+        text-align: center;
+    }
+    .edhs-header h1 { margin: 0; font-size: 1.75rem; font-weight: 700; }
+    .edhs-header p { margin: 0.35rem 0 0; opacity: 0.95; font-size: 0.95rem; }
+    
+    /* Card-style sections */
+    .edhs-card {
+        background: white;
+        border-radius: 10px;
+        padding: 1.25rem;
+        margin-bottom: 1rem;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+        border: 1px solid #e2e8f0;
+    }
+    
+    /* Sidebar nav styling */
+    [data-testid="stSidebar"] .stRadio > label { font-weight: 600; font-size: 0.9rem; }
+    [data-testid="stSidebar"] section[data-testid="stSidebar"] { padding-top: 0.5rem; }
+    
+    /* Button polish */
+    .stButton > button {
+        border-radius: 8px;
+        font-weight: 500;
+        transition: all 0.2s ease;
+        cursor: pointer;
+        border: 1px solid #e2e8f0;
+        background-color: #fff;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+    }
+    .stButton > button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(13, 148, 136, 0.2);
+        border-color: #0d9488;
+        background-color: #f0fdfa;
+        color: #0f766e;
+    }
+    .stButton > button:active {
+        transform: translateY(0);
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+    
+    /* Metric / KPI cards */
+    [data-testid="stMetric"] { background: #f8fafc; padding: 0.75rem; border-radius: 8px; }
+    
+    /* Section headers */
+    h3 { color: #0f766e; font-weight: 600; }
+    
+    /* Hide Streamlit branding in compact mode */
+    #MainMenu { visibility: hidden; }
+    footer { visibility: hidden; }
+</style>
+""", unsafe_allow_html=True)
+
+# Process pending navigation (before any widget using edhs_nav_radio is created)
+if "edhs_nav_pending" in st.session_state:
+    st.session_state["edhs_nav_page"] = st.session_state.pop("edhs_nav_pending")
+    st.session_state.pop("edhs_nav_radio", None)  # Let radio use index from edhs_nav_page
+
+# -----------------------------------------------------------------------------
+# Sidebar: Navigation menu
+# -----------------------------------------------------------------------------
+st.sidebar.markdown("### 📊 EDHS Platform")
+st.sidebar.markdown("---")
+
+nav_options = ["🏠 Home", "📡 DHS Program API", "📂 Microdata Analysis", "⚙️ Settings"]
+if "edhs_nav_page" not in st.session_state:
+    st.session_state["edhs_nav_page"] = "🏠 Home"
+
+nav_choice = st.sidebar.radio(
+    "**Navigate**",
+    nav_options,
+    index=nav_options.index(st.session_state.get("edhs_nav_page", nav_options[0])),
+    key="edhs_nav_radio",
+    label_visibility="collapsed",
+)
+st.session_state["edhs_nav_page"] = nav_choice
+
+st.sidebar.markdown("---")
+
 # Sidebar: connection (in expander to reduce clutter)
 with st.sidebar.expander("Backend connection", expanded=False):
     base_url = st.text_input(
@@ -876,61 +985,170 @@ else:
         "Create a session: **Try with sample data**, **Load from URL**, or upload a .dta/.sav file and click **Upload dataset**."
     )
 
-# Main area
+# Main area – header
 st.markdown(
-    '<div style="text-align: center;">'
-    '<h1 style="margin-bottom: 0.25rem;">Hybrid EDHS Platform</h1>'
-    '<p style="color: #666; font-size: 0.9rem;">Upload data, choose an indicator, and view results with optional map and export.</p>'
+    '<div class="edhs-header">'
+    '<h1>Hybrid EDHS Platform</h1>'
+    '<p>Explore DHS/EDHS data — fetch indicators, visualize trends, and export for research.</p>'
     '</div>',
     unsafe_allow_html=True,
 )
-st.markdown("---")
-# Toujours afficher un message pour vérifier que la page se charge
-if not st.session_state.get("edhs_session_id"):
-    st.info(
-        "👈 **Ouvrez la barre latérale** (icône en haut à gauche) puis créez une session : **Try with sample data**, **Load from URL**, ou envoyez un fichier .dta/.sav."
-    )
 
-# Show upload error prominently so it's not missed
-if st.session_state.get("edhs_upload_error"):
-    st.error("**Erreur d’upload :** " + st.session_state["edhs_upload_error"])
-    st.caption(
-        "Ouvrez la **barre latérale** (icône ‹ en haut à gauche) pour resélectionner un fichier .dta/.sav et cliquer sur **Upload dataset**. "
-        "Ou utilisez le bouton ci‑dessous pour continuer avec des données d'exemple."
+# Route main content by navigation
+if nav_choice == "🏠 Home":
+    st.markdown("### Welcome")
+    st.markdown(
+        "The **Hybrid EDHS Platform** lets you explore Demographic and Health Survey (DHS) data: "
+        "fetch indicators from the DHS Program API, visualize trends, compute from microdata, and export for research."
     )
-    if st.button("Essayer avec des données d'exemple (sans fichier)", type="primary", key="sample_after_error"):
-        try:
-            resp = api_mock_session(
-                base_url,
-                tenant_id,
-                bearer_token or None,
-                survey_country_code=(st.session_state.get("sidebar_country") or "ETH").strip() or None,
-                survey_year=int(st.session_state.get("sidebar_year", 2019)),
-                survey_type=st.session_state.get("sidebar_type") or "DHS",
-            )
-            st.session_state["edhs_session_id"] = resp["session_id"]
-            st.session_state["edhs_session_source"] = "sample"
-            st.session_state["edhs_survey_country_code"] = resp.get("survey_country_code")
-            st.session_state["edhs_survey_year"] = resp.get("survey_year")
-            st.session_state["edhs_survey_type"] = resp.get("survey_type")
-            history = st.session_state.setdefault("edhs_sessions_history", [])
-            history.append(
-                {
-                    "session_id": resp["session_id"],
-                    "country": resp.get("survey_country_code"),
-                    "year": resp.get("survey_year"),
-                    "type": resp.get("survey_type"),
-                    "filename": resp.get("filename", "sample"),
-                }
-            )
-            st.session_state.pop("edhs_upload_error", None)
-            st.success("Session créée. Vous pouvez maintenant choisir un indicateur.")
-            st.rerun()
-        except Exception as e:
-            st.error(str(e))
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("Backend", "Connected" if st.session_state.get("edhs_connection_ok") else "Disconnected", "")
+    with col2:
+        st.metric("Session", "Active" if session_id else "None", "")
+    with col3:
+        has_dhs = "Yes" if st.session_state.get("edhs_dhs_api_data") else "No"
+        st.metric("DHS data loaded", has_dhs, "")
     st.markdown("---")
+    st.markdown("#### Quick start")
+    q1, q2, q3 = st.columns(3)
+    with q1:
+        if st.button("📡 Go to DHS Program API", use_container_width=True, key="nav_dhs"):
+            st.session_state["edhs_nav_pending"] = "📡 DHS Program API"
+            st.rerun()
+    with q2:
+        if st.button("📂 Go to Microdata Analysis", use_container_width=True, key="nav_micro"):
+            st.session_state["edhs_nav_pending"] = "📂 Microdata Analysis"
+            st.rerun()
+    with q3:
+        if st.button("⚙️ Go to Settings", use_container_width=True, key="nav_set"):
+            st.session_state["edhs_nav_pending"] = "⚙️ Settings"
+            st.rerun()
+    st.markdown("---")
+    st.markdown("**Need data?** Use the sidebar to fetch from the DHS Program API, try sample data, or upload a .dta/.sav file.")
+    st.stop()
 
-if not session_id:
+elif nav_choice == "📡 DHS Program API":
+    # DHS Program API section (no session required)
+    st.markdown("## 📡 DHS Program API – Indicators & Data")
+    st.caption(
+        "Browse indicators and fetch aggregated data from the DHS Program STATcompiler (api.dhsprogram.com). "
+        "No session required."
+    )
+    with st.expander("Fetch data", expanded=True):
+        if st.button("Fetch Benin data (BJ)", key="dhs_fetch_benin_nav", type="primary"):
+            try:
+                with st.spinner("Fetching…"):
+                    dhs_resp = api_dhs_data(base_url, tenant_id, bearer_token or None, country_ids="BJ", indicator_ids="FE_FRTR_W_A15,CN_ANMC_C_ANY", survey_year_start=2000, survey_year_end=2024)
+                st.session_state["edhs_dhs_api_data"] = dhs_resp
+                st.session_state["edhs_dhs_fetch_countries"] = "BJ"
+                st.session_state["edhs_dhs_fetch_indicators"] = "FE_FRTR_W_A15,CN_ANMC_C_ANY"
+                st.session_state.pop("edhs_dhs_indicators", None)
+                st.success(f"Loaded {len(dhs_resp.get('Data', []))} records.")
+                st.rerun()
+            except Exception as e:
+                st.error(str(e))
+        if _DHS_RESEARCH_AVAILABLE and (SUGGESTED_BY_TOPIC or COMPARISON_TEMPLATES):
+            with st.expander("💡 Suggested indicators & templates", expanded=False):
+                for topic, inds in list(SUGGESTED_BY_TOPIC.items())[:3]:
+                    if st.button(f"Use {topic}: " + ",".join(inds[:2]) + "…", key=f"dhs_nav_sug_{hash(topic) % 10**8}"):
+                        st.session_state["edhs_dhs_fetch_indicators"] = ",".join(inds)
+                        st.rerun()
+                for idx, (label, c, i) in enumerate(COMPARISON_TEMPLATES[:3]):
+                    if st.button(f"Template: {label}", key=f"dhs_nav_tpl_{idx}"):
+                        st.session_state["edhs_dhs_fetch_countries"] = c
+                        st.session_state["edhs_dhs_fetch_indicators"] = i
+                        st.rerun()
+        dhs_country_input = st.text_input("Country codes (e.g. ET,BJ,EG)", value=st.session_state.get("edhs_dhs_fetch_countries", "BJ"), key="dhs_countries_nav", help="ISO codes")
+        dhs_indicator_input = st.text_input("Indicator IDs", value=st.session_state.get("edhs_dhs_fetch_indicators", "FE_FRTR_W_A15,CN_ANMC_C_ANY"), key="dhs_indicators_nav")
+        dhs_year_col1, dhs_year_col2 = st.columns(2)
+        with dhs_year_col1:
+            dhs_year_start = st.number_input("Year from", min_value=1990, max_value=2030, value=2000, key="dhs_yr_start_nav")
+        with dhs_year_col2:
+            dhs_year_end = st.number_input("Year to", min_value=1990, max_value=2030, value=2024, key="dhs_yr_end_nav")
+        if st.button("Fetch DHS Program data", key="dhs_fetch_nav"):
+            if dhs_country_input.strip() and dhs_indicator_input.strip():
+                try:
+                    with st.spinner("Fetching…"):
+                        dhs_resp = api_dhs_data(base_url, tenant_id, bearer_token or None, country_ids=dhs_country_input.strip(), indicator_ids=dhs_indicator_input.strip(), survey_year_start=int(dhs_year_start), survey_year_end=int(dhs_year_end))
+                    st.session_state["edhs_dhs_api_data"] = dhs_resp
+                    st.session_state["edhs_dhs_fetch_countries"] = dhs_country_input.strip()
+                    st.session_state["edhs_dhs_fetch_indicators"] = dhs_indicator_input.strip()
+                    st.session_state.pop("edhs_dhs_indicators", None)
+                    st.success(f"Retrieved {len(dhs_resp.get('Data', []))} records.")
+                    st.rerun()
+                except Exception as e:
+                    st.error(str(e))
+            else:
+                st.error("Enter country codes and indicator IDs.")
+    if st.session_state.get("edhs_dhs_api_data"):
+        _render_dhs_research_ui(st.session_state["edhs_dhs_api_data"], st.session_state.get("edhs_dhs_fetch_countries", "BJ"), st.session_state.get("edhs_dhs_fetch_indicators", ""), int(st.session_state.get("dhs_yr_start_nav", 2000)), int(st.session_state.get("dhs_yr_end_nav", 2024)), key_prefix="dhs_nav")
+        st.download_button("Export JSON", data=json.dumps(st.session_state["edhs_dhs_api_data"], indent=2).encode("utf-8"), file_name="dhs_export.json", mime="application/json", key="dhs_json_nav")
+    with st.expander("Browse indicators catalog", expanded=False):
+        if st.button("Load catalog", key="dhs_catalog_nav"):
+            try:
+                ind_resp = api_dhs_indicators(base_url, tenant_id, bearer_token or None, per_page=50)
+                st.session_state["edhs_dhs_indicators"] = ind_resp
+                st.rerun()
+            except Exception as e:
+                st.error(str(e))
+        if st.session_state.get("edhs_dhs_indicators"):
+            ind_list = st.session_state["edhs_dhs_indicators"].get("Data", [])
+            if ind_list:
+                sample_df = pd.DataFrame(ind_list[:50])
+                cols = [c for c in ["IndicatorId", "ShortName", "Label"] if c in sample_df.columns]
+                if cols:
+                    st.dataframe(sample_df[cols], use_container_width=True)
+    st.stop()
+
+elif nav_choice == "⚙️ Settings":
+    st.markdown("## ⚙️ Settings")
+    st.markdown("Connection and API configuration.")
+    with st.form("settings_form"):
+        base_url_set = st.text_input("API base URL", value=base_url, key="settings_base_url")
+        tenant_id_set = st.text_input("Tenant ID", value=tenant_id, key="settings_tenant")
+        bearer_set = st.text_input("JWT token (optional)", type="password", value=bearer_token or "", key="settings_bearer")
+        if st.form_submit_button("Save (reload to apply)"):
+            st.info("Change the values in the sidebar 'Backend connection' expander and rerun. Session state is not persisted.")
+    if st.button("Check connection"):
+        ok = api_health(base_url, tenant_id, bearer_token or None)
+        if ok:
+            st.success("Backend is reachable.")
+        else:
+            st.error("Cannot reach backend.")
+    st.stop()
+
+elif nav_choice == "📂 Microdata Analysis":
+    if not st.session_state.get("edhs_session_id"):
+        st.info("👈 **Open the sidebar** to create a session: **Try with sample data**, **Load from URL**, or upload a .dta/.sav file.")
+        if st.session_state.get("edhs_upload_error"):
+            st.error("**Erreur d’upload :** " + st.session_state["edhs_upload_error"])
+            st.caption(
+                "Use the sidebar to reselect a file or try sample data below."
+            )
+            if st.button("Try with sample data", type="primary", key="sample_after_error"):
+                try:
+                    resp = api_mock_session(
+                        base_url, tenant_id, bearer_token or None,
+                        survey_country_code=(st.session_state.get("sidebar_country") or "ETH").strip() or None,
+                        survey_year=int(st.session_state.get("sidebar_year", 2019)),
+                        survey_type=st.session_state.get("sidebar_type") or "DHS",
+                    )
+                    st.session_state["edhs_session_id"] = resp["session_id"]
+                    st.session_state["edhs_session_source"] = "sample"
+                    st.session_state["edhs_survey_country_code"] = resp.get("survey_country_code")
+                    st.session_state["edhs_survey_year"] = resp.get("survey_year")
+                    st.session_state["edhs_survey_type"] = resp.get("survey_type")
+                    history = st.session_state.setdefault("edhs_sessions_history", [])
+                    history.append({"session_id": resp["session_id"], "country": resp.get("survey_country_code"), "year": resp.get("survey_year"), "type": resp.get("survey_type"), "filename": resp.get("filename", "sample")})
+                    st.session_state.pop("edhs_upload_error", None)
+                    st.success("Session created.")
+                    st.rerun()
+                except Exception as e:
+                    st.error(str(e))
+        st.markdown("---")
+
+if nav_choice == "📂 Microdata Analysis" and not session_id:
     st.markdown("---")
     # If a file is already selected in the sidebar, offer to send it from the main area
     upload_name = st.session_state.get("edhs_upload_file_name")
@@ -1019,131 +1237,10 @@ if not session_id:
             except Exception as e:
                 st.error(f"Could not create session: {e}")
 
-    # DHS Program API – visible even without a session (no microdata required)
-    st.markdown("---")
-    st.markdown("## DHS Program API – Indicators & Data Export")
-    st.caption(
-        "Browse indicators and fetch aggregated data from the DHS Program STATcompiler "
-        "(api.dhsprogram.com). No session required."
-    )
-    with st.expander("DHS Program API – Browse & Export", expanded=True):
-        if st.button("Fetch Benin data (BJ)", key="dhs_fetch_benin_no_session", type="primary"):
-            try:
-                with st.spinner("Fetching Benin data from DHS Program API…"):
-                    dhs_resp = api_dhs_data(
-                        base_url,
-                        tenant_id,
-                        bearer_token or None,
-                        country_ids="BJ",
-                        indicator_ids="FE_FRTR_W_A15,CN_ANMC_C_ANY",
-                        survey_year_start=2000,
-                        survey_year_end=2024,
-                    )
-                st.session_state["edhs_dhs_api_data"] = dhs_resp
-                st.session_state["edhs_dhs_fetch_countries"] = "BJ"
-                st.session_state["edhs_dhs_fetch_indicators"] = "FE_FRTR_W_A15,CN_ANMC_C_ANY"
-                st.session_state.pop("edhs_dhs_indicators", None)  # Clear catalog so data table shows
-                st.success(f"Loaded {len(dhs_resp.get('Data', []))} records for Benin.")
-                st.rerun()
-            except Exception as e:
-                st.error(str(e))
-
-    # Suggested indicators & quick templates
-    if _DHS_RESEARCH_AVAILABLE and (SUGGESTED_BY_TOPIC or COMPARISON_TEMPLATES):
-        with st.expander("💡 Suggested indicators & quick templates", expanded=False):
-            for topic, inds in list(SUGGESTED_BY_TOPIC.items())[:3]:
-                if st.button(f"Use {topic}: " + ",".join(inds[:2]) + "…", key=f"dhs_ns_sug_{hash(topic) % 10**8}"):
-                    st.session_state["edhs_dhs_fetch_indicators"] = ",".join(inds)
-                    st.session_state["dhs_indicator_ids_no_session"] = ",".join(inds)
-                    st.rerun()
-            for idx, (label, c, i) in enumerate(COMPARISON_TEMPLATES[:3]):
-                if st.button(f"Template: {label}", key=f"dhs_ns_fetch_tpl_{idx}"):
-                    st.session_state["edhs_dhs_fetch_countries"] = c
-                    st.session_state["edhs_dhs_fetch_indicators"] = i
-                    st.session_state["dhs_country_codes_no_session"] = c
-                    st.session_state["dhs_indicator_ids_no_session"] = i
-                    st.rerun()
-
-    dhs_country_input = st.text_input(
-        "Country codes (comma-separated, e.g. ET,BJ,EG)",
-        value=st.session_state.get("edhs_dhs_fetch_countries", "BJ"),
-        key="dhs_country_codes_no_session",
-        help="ISO country codes from DHS Program (ET=Ethiopia, BJ=Benin, EG=Egypt, etc.)",
-    )
-    dhs_indicator_input = st.text_input(
-        "Indicator IDs (comma-separated)",
-        value=st.session_state.get("edhs_dhs_fetch_indicators", "FE_FRTR_W_A15,CN_ANMC_C_ANY"),
-        key="dhs_indicator_ids_no_session",
-        help="e.g. FE_FRTR_W_A15 (ASFR 15-19), CN_ANMC_C_ANY (modern contraception)",
-    )
-    dhs_year_col1, dhs_year_col2 = st.columns(2)
-    with dhs_year_col1:
-        dhs_year_start = st.number_input(
-            "Survey year from",
-            min_value=1990,
-            max_value=2030,
-            value=2000,
-            key="dhs_year_start_no_session",
-        )
-    with dhs_year_col2:
-        dhs_year_end = st.number_input(
-            "Survey year to",
-            min_value=1990,
-            max_value=2030,
-            value=2024,
-            key="dhs_year_end_no_session",
-        )
-
-    if st.button("Fetch DHS Program data", key="dhs_fetch_btn_no_session"):
-        if not dhs_country_input.strip() or not dhs_indicator_input.strip():
-            st.error("Enter at least one country code and one indicator ID.")
-        else:
-            try:
-                with st.spinner("Fetching from DHS Program API…"):
-                    dhs_resp = api_dhs_data(
-                        base_url,
-                        tenant_id,
-                        bearer_token or None,
-                        country_ids=dhs_country_input.strip(),
-                        indicator_ids=dhs_indicator_input.strip(),
-                        survey_year_start=int(dhs_year_start),
-                        survey_year_end=int(dhs_year_end),
-                    )
-                st.session_state["edhs_dhs_api_data"] = dhs_resp
-                st.session_state["edhs_dhs_fetch_countries"] = dhs_country_input.strip()
-                st.session_state["edhs_dhs_fetch_indicators"] = dhs_indicator_input.strip()
-                st.session_state.pop("edhs_dhs_indicators", None)  # Clear catalog so data table shows
-                st.success(f"Retrieved {len(dhs_resp.get('Data', []))} records.")
-                st.rerun()
-            except requests.HTTPError as e:
-                detail = str(e)
-                if e.response is not None:
-                    try:
-                        body = e.response.json()
-                        detail = body.get("detail", detail)
-                    except Exception:
-                        pass
-                st.error(detail)
-            except Exception as e:
-                st.error(str(e))
-
-    if st.session_state.get("edhs_dhs_api_data"):
-        dhs_data = st.session_state["edhs_dhs_api_data"]
-        _countries = st.session_state.get("edhs_dhs_fetch_countries", dhs_country_input.strip())
-        _indicators = st.session_state.get("edhs_dhs_fetch_indicators", dhs_indicator_input.strip())
-        _render_dhs_research_ui(
-            dhs_data, _countries, _indicators,
-            int(dhs_year_start), int(dhs_year_end),
-            key_prefix="dhs_ns",
-        )
-        st.download_button(
-            label="Export JSON",
-            data=json.dumps(dhs_data, indent=2).encode("utf-8"),
-            file_name="dhs_program_export.json",
-            mime="application/json",
-            key="dhs_export_json_no_session",
-        )
-
+    st.caption("For DHS Program API data (no session required), use the **DHS Program API** menu.")
+    if st.button("Go to DHS Program API", key="go_dhs_nav"):
+        st.session_state["edhs_nav_pending"] = "📡 DHS Program API"
+        st.rerun()
     st.stop()
 
 # Load indicators once
@@ -1609,16 +1706,13 @@ if st.session_state.get("edhs_last_geojson"):
         )
 
 st.divider()
-st.markdown("---")
-st.markdown("## DHS Program API – Indicators & Data Export")
+st.caption("For DHS Program API data (indicators, visualizations, export), use the **DHS Program API** menu in the sidebar.")
+if st.button("📡 Go to DHS Program API", key="go_dhs_from_micro"):
+    st.session_state["edhs_nav_pending"] = "📡 DHS Program API"
+    st.rerun()
 
-st.caption(
-    "Browse indicators and fetch aggregated data from the DHS Program STATcompiler "
-    "(api.dhsprogram.com). Data is proxied through the backend. Requires DHS_PROGRAM_API_KEY configured."
-)
-
-with st.expander("DHS Program API – Browse & Export", expanded=True):
-    # Quick fetch: Benin (BJ) – one-click demo
+# Legacy DHS section kept collapsed for users who had it open – redirect to nav
+with st.expander("DHS Program API (legacy – use menu)", expanded=False):
     if st.button("Fetch Benin data (BJ)", key="dhs_fetch_benin", type="primary"):
         try:
             with st.spinner("Fetching Benin data from DHS Program API…"):
