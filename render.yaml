@@ -1,0 +1,43 @@
+# Render Blueprint - DHS Hybrid Plugin Plateform
+# Deploy: Connect this repo to Render → New → Blueprint
+# API: https://<edhs-api>.onrender.com  |  Dashboard: https://<edhs-dashboard>.onrender.com
+
+services:
+  # FastAPI backend (geopandas requires Docker for system libs)
+  - type: web
+    runtime: docker
+    name: edhs-api
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    dockerCommand: sh -c "uvicorn edhs_core.main:app --host 0.0.0.0 --port ${PORT:-8000}"
+    healthCheckPath: /api/v1/health
+    envVars:
+      - key: SECRET_KEY
+        generateValue: true
+      - key: TEMP_DATA_DIR
+        value: /tmp/edhs_core_sessions
+      - key: SESSION_TTL_SECONDS
+        value: "3600"
+      - key: DHS_PROGRAM_API_KEY
+        sync: false  # Add your key from https://api.dhsprogram.com/
+      - key: BACKEND_CORS_ORIGINS
+        sync: false  # Add your dashboard URL after deploy (e.g. https://edhs-dashboard-xxx.onrender.com)
+
+  # Streamlit dashboard
+  - type: web
+    runtime: python
+    name: edhs-dashboard
+    buildCommand: pip install -r requirements.txt -r web_dashboard/requirements.txt
+    startCommand: streamlit run web_dashboard/streamlit_app.py --server.port=$PORT --server.address=0.0.0.0 --server.headless=true
+    envVars:
+      # Internal URL via private network (dashboard → API)
+      - key: API_HOST
+        fromService:
+          type: web
+          name: edhs-api
+          property: host
+      - key: API_PORT
+        fromService:
+          type: web
+          name: edhs-api
+          property: port

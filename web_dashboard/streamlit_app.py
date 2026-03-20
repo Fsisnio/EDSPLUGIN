@@ -9,6 +9,7 @@ Connects to the FastAPI backend to:
 """
 
 import json
+import os
 from typing import Any, Dict, List, Optional
 
 import pandas as pd
@@ -756,11 +757,22 @@ st.session_state["edhs_nav_page"] = nav_choice
 
 st.sidebar.markdown("---")
 
+# Default API URL: from env (Render) or localhost
+def _default_api_base_url() -> str:
+    if base := os.environ.get("API_BASE_URL"):
+        return base.rstrip("/")
+    host = os.environ.get("API_HOST")
+    port = os.environ.get("API_PORT")
+    if host and port:
+        return f"http://{host}:{port}/api/v1"
+    return "http://127.0.0.1:8000/api/v1"
+
+
 # Sidebar: connection (in expander to reduce clutter)
 with st.sidebar.expander("Backend connection", expanded=False):
     base_url = st.text_input(
         "API base URL",
-        value="http://127.0.0.1:8000/api/v1",
+        value=_default_api_base_url(),
         help="FastAPI backend URL.",
     )
     tenant_id = st.text_input("Tenant ID", value="demo-tenant")
