@@ -6,12 +6,18 @@ Fetches indicators, countries, surveys, and indicator data.
 
 import logging
 from typing import Any, Dict, Optional
+from urllib.parse import quote
 
 import httpx
 
 logger = logging.getLogger("edhs_core.dhs_api")
 
 DHS_API_BASE = "https://api.dhsprogram.com/rest/dhs"
+
+
+def _sanitize_api_key(key: str) -> str:
+    """Ensure API key has no path suffix (e.g. SPEROF-176817/test/mock-session -> SPEROF-176817)."""
+    return key.split("/")[0].strip() if key else ""
 
 
 class DhsProgramApiClient:
@@ -22,14 +28,14 @@ class DhsProgramApiClient:
     """
 
     def __init__(self, api_key: str, base_url: str = DHS_API_BASE) -> None:
-        self.api_key = api_key
+        self.api_key = _sanitize_api_key(api_key)
         self.base_url = base_url.rstrip("/")
 
     def _url(self, path: str, **params: Any) -> str:
         """Build URL with API key and optional params."""
         params = {k: v for k, v in params.items() if v is not None}
         params["apiKey"] = self.api_key
-        qs = "&".join(f"{k}={v}" for k, v in params.items())
+        qs = "&".join(f"{k}={quote(str(v), safe=',')}" for k, v in params.items())
         return f"{self.base_url}/{path.lstrip('/')}?{qs}"
 
     def _get(self, path: str, **params: Any) -> Dict[str, Any]:

@@ -11,7 +11,7 @@ import json
 import logging
 from typing import Any, Dict, Optional
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
 
 from ..config import settings
@@ -22,19 +22,20 @@ logger = logging.getLogger("edhs_core.dhs_api")
 router = APIRouter(prefix="/dhs-api", tags=["DHS Program API"])
 
 
-def _get_client() -> DhsProgramApiClient:
-    """Get DHS Program API client; raise if API key not configured."""
-    key = settings.DHS_PROGRAM_API_KEY
-    if not key or not key.strip():
+def _get_client(x_dhs_api_key: Optional[str] = Header(default=None, alias="X-DHS-API-Key")) -> DhsProgramApiClient:
+    """Get DHS Program API client; use X-DHS-API-Key if provided, else server default."""
+    key = (x_dhs_api_key or "").strip() or (settings.DHS_PROGRAM_API_KEY or "").strip()
+    if not key:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="DHS Program API key not configured. Set DHS_PROGRAM_API_KEY in environment.",
+            detail="DHS Program API key not configured. Set DHS_PROGRAM_API_KEY in environment or provide X-DHS-API-Key header.",
         )
-    return DhsProgramApiClient(api_key=key.strip())
+    return DhsProgramApiClient(api_key=key)
 
 
 @router.get("/indicators")
 async def dhs_list_indicators(
+    client: DhsProgramApiClient = Depends(_get_client),
     country_ids: Optional[str] = Query(None, description="Comma-separated country codes (e.g. ET,BJ)"),
     indicator_ids: Optional[str] = Query(None, description="Comma-separated indicator IDs"),
     page: Optional[int] = Query(None),
@@ -44,7 +45,6 @@ async def dhs_list_indicators(
     List indicators from the DHS Program API (STATcompiler catalog).
     """
     try:
-        client = _get_client()
         return client.get_indicators(
             country_ids=country_ids,
             indicator_ids=indicator_ids,
@@ -63,6 +63,7 @@ async def dhs_list_indicators(
 
 @router.get("/countries")
 async def dhs_list_countries(
+    client: DhsProgramApiClient = Depends(_get_client),
     country_ids: Optional[str] = Query(None),
     survey_ids: Optional[str] = Query(None),
     survey_year: Optional[int] = Query(None),
@@ -75,7 +76,6 @@ async def dhs_list_countries(
     List countries with DHS surveys from the DHS Program API.
     """
     try:
-        client = _get_client()
         return client.get_countries(
             country_ids=country_ids,
             survey_ids=survey_ids,
@@ -97,6 +97,7 @@ async def dhs_list_countries(
 
 @router.get("/surveys")
 async def dhs_list_surveys(
+    client: DhsProgramApiClient = Depends(_get_client),
     country_ids: Optional[str] = Query(None),
     survey_ids: Optional[str] = Query(None),
     survey_year: Optional[int] = Query(None),
@@ -111,7 +112,6 @@ async def dhs_list_surveys(
     List surveys from the DHS Program API.
     """
     try:
-        client = _get_client()
         return client.get_surveys(
             country_ids=country_ids,
             survey_ids=survey_ids,
@@ -135,6 +135,7 @@ async def dhs_list_surveys(
 
 @router.get("/data")
 async def dhs_get_data(
+    client: DhsProgramApiClient = Depends(_get_client),
     country_ids: str = Query(..., description="Comma-separated country codes (e.g. ET,BJ)"),
     indicator_ids: str = Query(..., description="Comma-separated indicator IDs"),
     survey_ids: Optional[str] = Query(None),
@@ -151,7 +152,6 @@ async def dhs_get_data(
     Fetch indicator data from the DHS Program API (STATcompiler aggregated data).
     """
     try:
-        client = _get_client()
         return client.get_data(
             country_ids=country_ids,
             indicator_ids=indicator_ids,
@@ -177,6 +177,7 @@ async def dhs_get_data(
 
 @router.get("/data/export/csv")
 async def dhs_export_data_csv(
+    client: DhsProgramApiClient = Depends(_get_client),
     country_ids: str = Query(..., description="Comma-separated country codes"),
     indicator_ids: str = Query(..., description="Comma-separated indicator IDs"),
     survey_ids: Optional[str] = Query(None),
@@ -188,7 +189,6 @@ async def dhs_export_data_csv(
     Export DHS Program API indicator data as CSV.
     """
     try:
-        client = _get_client()
         result = client.get_data(
             country_ids=country_ids,
             indicator_ids=indicator_ids,
@@ -231,6 +231,7 @@ async def dhs_export_data_csv(
 
 @router.get("/data/export/json")
 async def dhs_export_data_json(
+    client: DhsProgramApiClient = Depends(_get_client),
     country_ids: str = Query(..., description="Comma-separated country codes"),
     indicator_ids: str = Query(..., description="Comma-separated indicator IDs"),
     survey_ids: Optional[str] = Query(None),
@@ -242,7 +243,6 @@ async def dhs_export_data_json(
     Export DHS Program API indicator data as JSON.
     """
     try:
-        client = _get_client()
         result = client.get_data(
             country_ids=country_ids,
             indicator_ids=indicator_ids,
