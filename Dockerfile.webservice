@@ -1,0 +1,33 @@
+# Single web service: FastAPI API + Streamlit dashboard
+# API runs on 8000 (internal), Streamlit on $PORT (exposed)
+FROM python:3.12-slim
+
+WORKDIR /app
+
+# System deps for geopandas / pyreadstat
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libgdal-dev \
+    libgeos-dev \
+    libproj-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# API + dashboard dependencies
+COPY requirements.txt .
+COPY web_dashboard/requirements.txt web_dashboard/
+RUN pip install --no-cache-dir -r requirements.txt -r web_dashboard/requirements.txt
+
+# Application code
+COPY edhs_core/ ./edhs_core/
+COPY web_dashboard/ ./web_dashboard/
+
+ENV TEMP_DATA_DIR=/tmp/edhs_core_sessions
+ENV ADMIN_BOUNDARIES_ROOT=/opt/edhs/admin_boundaries
+ENV PYTHONUNBUFFERED=1
+
+# API on 8000 (internal), Streamlit on PORT (exposed)
+EXPOSE 8000
+
+COPY scripts/run_webservice.sh /app/run_webservice.sh
+RUN chmod +x /app/run_webservice.sh
+
+CMD ["/app/run_webservice.sh"]
