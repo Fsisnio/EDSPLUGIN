@@ -15,7 +15,6 @@ from typing import Any, Dict, List, Optional
 import pandas as pd
 import requests
 import streamlit as st
-import streamlit.components.v1 as components
 
 try:
     from dhs_research_features import (
@@ -660,23 +659,8 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# -----------------------------------------------------------------------------
-# Google Analytics (gtag.js) — G-X76TEN0BS5
-# -----------------------------------------------------------------------------
-components.html(
-    """
-<!-- Google tag (gtag.js) -->
-<script async src="https://www.googletagmanager.com/gtag/js?id=G-X76TEN0BS5"></script>
-<script>
-  window.dataLayer = window.dataLayer || [];
-  function gtag(){dataLayer.push(arguments);}
-  gtag('js', new Date());
-  gtag('config', 'G-X76TEN0BS5');
-</script>
-    """,
-    height=0,
-    width=0,
-)
+# Google Analytics (G-X76TEN0BS5): injected into Streamlit's index.html at build time
+# (see scripts/inject_streamlit_google_analytics.py) — not here, iframe would hide from Tag Assistant.
 
 # -----------------------------------------------------------------------------
 # Custom CSS – modern, user-friendly styling

@@ -16,6 +16,10 @@ COPY requirements.txt .
 COPY web_dashboard/requirements.txt web_dashboard/
 RUN pip install --no-cache-dir -r requirements.txt -r web_dashboard/requirements.txt
 
+# GA in main HTML (components.html runs in iframe — Google Tag Assistant won't see it)
+COPY scripts/inject_streamlit_google_analytics.py /app/scripts/inject_streamlit_google_analytics.py
+RUN python /app/scripts/inject_streamlit_google_analytics.py
+
 # Application code
 COPY edhs_core/ ./edhs_core/
 COPY web_dashboard/ ./web_dashboard/
