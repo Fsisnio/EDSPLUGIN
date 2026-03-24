@@ -15,6 +15,7 @@ from typing import Any, Dict, List, Optional
 import pandas as pd
 import requests
 import streamlit as st
+import streamlit.components.v1 as components
 
 try:
     from dhs_research_features import (
@@ -660,18 +661,22 @@ st.set_page_config(
 )
 
 # -----------------------------------------------------------------------------
-# Google Analytics (gtag.js)
+# Google Analytics (gtag.js) — G-X76TEN0BS5
 # -----------------------------------------------------------------------------
-st.markdown("""
+components.html(
+    """
 <!-- Google tag (gtag.js) -->
-<script async src="https://www.googletagmanager.com/gtag/js?id=G-B9F48TD21L"></script>
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-X76TEN0BS5"></script>
 <script>
   window.dataLayer = window.dataLayer || [];
   function gtag(){dataLayer.push(arguments);}
   gtag('js', new Date());
-  gtag('config', 'G-B9F48TD21L');
+  gtag('config', 'G-X76TEN0BS5');
 </script>
-""", unsafe_allow_html=True)
+    """,
+    height=0,
+    width=0,
+)
 
 # -----------------------------------------------------------------------------
 # Custom CSS – modern, user-friendly styling
