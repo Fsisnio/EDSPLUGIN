@@ -11,6 +11,7 @@ Connects to the FastAPI backend to:
 import json
 import os
 from typing import Any, Dict, List, Optional
+from urllib.parse import urlparse, urlunparse
 
 import pandas as pd
 import requests
@@ -325,6 +326,48 @@ def get_headers(
     return h
 
 
+def _normalize_backend_base_url(raw: str) -> str:
+    """
+    Strip query/fragment and trailing slash so pasted URLs still work as a path prefix
+    (e.g. .../api/v1?utm=x → .../api/v1). Fully customizable host/path for your deployment.
+    """
+    s = (raw or "").strip()
+    if not s:
+        return ""
+    if "://" not in s:
+        s = "http://" + s
+    p = urlparse(s)
+    path = (p.path or "").rstrip("/")
+    return urlunparse((p.scheme, p.netloc, path, "", "", ""))
+
+
+def _require_edhs_backend_base_url(base_url: str) -> None:
+    """
+    Microdata and /dhs-api proxy calls must use this app's FastAPI base (…/api/v1),
+    not a raw https://api.dhsprogram.com/... URL — otherwise paths like /indicators/compute
+    get appended to the query string (broken apiKey=…/indicators/compute) and return 405.
+    """
+    normalized = _normalize_backend_base_url(base_url)
+    if not normalized:
+        raise ValueError("API base URL is empty. Set it under Backend connection.")
+    parsed = urlparse(normalized if "://" in normalized else f"http://{normalized}")
+    host = (parsed.hostname or "").lower()
+    path_l = (parsed.path or "").lower()
+    if "dhsprogram.com" in host:
+        raise ValueError(
+            "Ce champ est **entièrement personnalisable** pour **l’adresse de votre serveur** EDHS/FastAPI "
+            "(ex. `http://127.0.0.1:8000/api/v1`, `https://mon-service.onrender.com/api/v1`, autre domaine ou port). "
+            "Ce n’est **pas** l’URL publique `api.dhsprogram.com` ni un lien d’exemple `/rest/dhs/data?…` — "
+            "ces liens servent au catalogue ; pour la clé, utilisez *DHS API key*. Corrigez *Backend connection*."
+        )
+    if "/rest/dhs" in path_l:
+        raise ValueError(
+            "Vous avez probablement collé une **URL de requête DHS Program** (`/rest/dhs/...`). "
+            "Mettez ici uniquement la **racine de votre API** EDHS (ex. `http://127.0.0.1:8000/api/v1`), "
+            "pas l’URL STATcompiler."
+        )
+
+
 def api_health(
     base_url: str,
     tenant_id: str,
@@ -332,6 +375,7 @@ def api_health(
     dhs_api_key: Optional[str] = None,
 ) -> bool:
     try:
+        _require_edhs_backend_base_url(base_url)
         r = requests.get(
             f"{base_url}/health",
             headers=get_headers(tenant_id, bearer_token, dhs_api_key),
@@ -345,6 +389,7 @@ def api_health(
 def api_list_indicators(
     base_url: str, tenant_id: str, bearer_token: Optional[str]
 ) -> List[Dict[str, Any]]:
+    _require_edhs_backend_base_url(base_url)
     r = requests.get(
         f"{base_url}/indicators",
         headers=get_headers(tenant_id, bearer_token),
@@ -372,6 +417,7 @@ def api_upload(
         data["survey_year"] = str(survey_year)
     if survey_type:
         data["survey_type"] = survey_type
+    _require_edhs_backend_base_url(base_url)
     r = requests.post(
         f"{base_url}/sessions/upload",
         headers=get_headers(tenant_id, bearer_token),
@@ -401,6 +447,7 @@ def api_session_from_url(
         payload["survey_year"] = survey_year
     if survey_type:
         payload["survey_type"] = survey_type
+    _require_edhs_backend_base_url(base_url)
     r = requests.post(
         f"{base_url}/sessions/from-url",
         headers={**get_headers(tenant_id, bearer_token), "Content-Type": "application/json"},
@@ -427,6 +474,7 @@ def api_mock_session(
         params["survey_year"] = str(survey_year)
     if survey_type:
         params["survey_type"] = survey_type
+    _require_edhs_backend_base_url(base_url)
     r = requests.post(
         f"{base_url}/test/mock-session",
         headers=get_headers(tenant_id, bearer_token),
@@ -446,6 +494,7 @@ def api_compute_indicator(
     use_weights: bool,
     weight_var: str,
 ) -> Dict[str, Any]:
+    _require_edhs_backend_base_url(base_url)
     r = requests.post(
         f"{base_url}/indicators/compute",
         headers={**get_headers(tenant_id, bearer_token), "Content-Type": "application/json"},
@@ -472,6 +521,7 @@ def api_compute_grouped(
     use_weights: bool,
     weight_var: str,
 ) -> Dict[str, Any]:
+    _require_edhs_backend_base_url(base_url)
     r = requests.post(
         f"{base_url}/indicators/compute-grouped",
         headers={**get_headers(tenant_id, bearer_token), "Content-Type": "application/json"},
@@ -500,6 +550,7 @@ def api_dhs_indicators(
     dhs_api_key: Optional[str] = None,
 ) -> Dict[str, Any]:
     """List indicators from DHS Program API (via backend proxy)."""
+    _require_edhs_backend_base_url(base_url)
     params: Dict[str, Any] = {}
     if country_ids:
         params["country_ids"] = country_ids
@@ -527,6 +578,7 @@ def api_dhs_countries(
     **params: Any,
 ) -> Dict[str, Any]:
     """List countries from DHS Program API (via backend proxy)."""
+    _require_edhs_backend_base_url(base_url)
     r = requests.get(
         f"{base_url}/dhs-api/countries",
         headers=get_headers(tenant_id, bearer_token, dhs_api_key),
@@ -558,6 +610,7 @@ def api_dhs_data(
         payload["survey_year_start"] = survey_year_start
     if survey_year_end is not None:
         payload["survey_year_end"] = survey_year_end
+    _require_edhs_backend_base_url(base_url)
     r = requests.get(
         f"{base_url}/dhs-api/data",
         headers=get_headers(tenant_id, bearer_token, dhs_api_key),
@@ -581,6 +634,7 @@ def api_spatial_aggregate(
     use_weights: bool,
     weight_var: str,
 ) -> Dict[str, Any]:
+    _require_edhs_backend_base_url(base_url)
     r = requests.post(
         f"{base_url}/spatial/aggregate",
         headers={**get_headers(tenant_id, bearer_token), "Content-Type": "application/json"},
@@ -773,11 +827,17 @@ def _default_api_base_url() -> str:
 
 # Sidebar: connection (in expander to reduce clutter)
 with st.sidebar.expander("Backend connection", expanded=False):
-    base_url = st.text_input(
-        "API base URL",
-        value=_default_api_base_url(),
-        help="FastAPI backend URL.",
+    if "edhs_api_base_url" not in st.session_state:
+        st.session_state["edhs_api_base_url"] = _default_api_base_url()
+    st.text_input(
+        "Backend base URL",
+        key="edhs_api_base_url",
+        help=(
+            "Personnalisable : racine de **votre** API EDHS/FastAPI (localhost, Render, IP, domaine, chemin `/api/v1`). "
+            "Pas `api.dhsprogram.com` ni une URL `/rest/dhs/data?…` — la clé DHS va dans *DHS API key*."
+        ),
     )
+    base_url = _normalize_backend_base_url(st.session_state.get("edhs_api_base_url") or "")
     tenant_id = st.text_input("Tenant ID", value="demo-tenant")
     bearer_token = st.text_input(
         "JWT token (optional)",
@@ -791,16 +851,23 @@ with st.sidebar.expander("Backend connection", expanded=False):
         help="Override the backend's DHS Program API key. Leave empty to use the server default.",
     )
     if st.button("Check connection"):
-        ok = api_health(base_url, tenant_id, bearer_token or None, dhs_api_key or None)
-        st.session_state["edhs_connection_ok"] = ok
-        if ok:
-            st.success("Backend is reachable.")
+        try:
+            _require_edhs_backend_base_url(base_url)
+        except ValueError as err:
+            st.session_state["edhs_connection_ok"] = False
+            st.error(str(err))
         else:
-            st.error("Cannot reach backend. Check URL and tenant.")
+            ok = api_health(base_url, tenant_id, bearer_token or None, dhs_api_key or None)
+            st.session_state["edhs_connection_ok"] = ok
+            if ok:
+                st.success("Backend is reachable.")
+            else:
+                st.error("Cannot reach backend. Check URL and tenant.")
 
 # Connection status badge (lazy check on first load; short timeout so app stays responsive)
 if "edhs_connection_ok" not in st.session_state:
     try:
+        _require_edhs_backend_base_url(base_url)
         r = requests.get(
             f"{base_url}/health",
             headers=get_headers(tenant_id, bearer_token or None, dhs_api_key or None),
