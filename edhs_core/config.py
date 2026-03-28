@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     # -------------------------------------------------------------------------
     # Core application
     # -------------------------------------------------------------------------
-    PROJECT_NAME: str = "DHS Hybrid Plugin Plateform"
+    PROJECT_NAME: str = "DHS Hybrid Plugin Platform"
     API_V1_PREFIX: str = "/api/v1"
     DEBUG: bool = False
     LOG_LEVEL: str = "INFO"

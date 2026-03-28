@@ -40,7 +40,7 @@ async def api_root() -> dict:
     visiting /api/v1 in a browser gives a valid response.
     """
     return {
-        "service": "DHS Hybrid Plugin Plateform API",
+        "service": "DHS Hybrid Plugin Platform API",
         "version": "v1",
         "docs": "/docs",
         "health": "/api/v1/health",

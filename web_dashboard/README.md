@@ -1,28 +1,28 @@
-# Dashboard EDHS – démarrage
+# EDHS dashboard — getting started
 
-## Lancer le dashboard
+## Run the dashboard
 
-Depuis la **racine du projet** (le dossier qui contient `edhs_core` et `web_dashboard`) :
+From the **project root** (the folder that contains `edhs_core` and `web_dashboard`):
 
 ```bash
-# 1. Démarrer l’API (dans un premier terminal)
+# 1. Start the API (first terminal)
 uvicorn edhs_core.main:app --reload
 
-# 2. Démarrer le dashboard (dans un second terminal)
+# 2. Start the dashboard (second terminal)
 cd "$(dirname "$0")/.."
 python -m streamlit run web_dashboard/streamlit_app.py --server.port=8501 --server.headless=false
 ```
 
-Ou avec Streamlit en ligne de commande :
+Or run Streamlit directly:
 
 ```bash
 streamlit run web_dashboard/streamlit_app.py --server.port=8501
 ```
 
-## Si la page reste blanche
+## If the page stays blank
 
-1. **Rechargement forcé** : Ctrl+Shift+R (Windows/Linux) ou Cmd+Shift+R (Mac).
-2. **Vérifier l’URL** : ouvrir `http://localhost:8501` (et non 127.0.0.1 si vous avez des soucis).
-3. **Autre navigateur** : tester Chrome ou Firefox.
-4. **Désactiver les extensions** : mode navigation privée pour tester.
-5. **Vérifier le terminal Streamlit** : une erreur Python peut s’afficher au démarrage.
+1. **Hard refresh:** Ctrl+Shift+R (Windows/Linux) or Cmd+Shift+R (Mac).
+2. **Check the URL:** open `http://localhost:8501` (try `127.0.0.1` if localhost misbehaves).
+3. **Another browser:** try Chrome or Firefox.
+4. **Disable extensions:** use a private window to test.
+5. **Check the Streamlit terminal:** a Python error may appear at startup.

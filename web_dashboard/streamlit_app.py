@@ -1,5 +1,5 @@
 """
-Streamlit MVP for the DHS Hybrid Plugin Plateform.
+Streamlit MVP for the DHS Hybrid Plugin Platform.
 
 Connects to the FastAPI backend to:
 - Upload DHS/EDHS datasets (or create a mock session)
@@ -355,16 +355,16 @@ def _require_edhs_backend_base_url(base_url: str) -> None:
     path_l = (parsed.path or "").lower()
     if "dhsprogram.com" in host:
         raise ValueError(
-            "Ce champ est **entièrement personnalisable** pour **l’adresse de votre serveur** EDHS/FastAPI "
-            "(ex. `http://127.0.0.1:8000/api/v1`, `https://mon-service.onrender.com/api/v1`, autre domaine ou port). "
-            "Ce n’est **pas** l’URL publique `api.dhsprogram.com` ni un lien d’exemple `/rest/dhs/data?…` — "
-            "ces liens servent au catalogue ; pour la clé, utilisez *DHS API key*. Corrigez *Backend connection*."
+            "This field must be **your** EDHS/FastAPI server base URL "
+            "(e.g. `http://127.0.0.1:8000/api/v1`, `https://your-service.onrender.com/api/v1`, or any host/port you deploy). "
+            "It must **not** be the public `api.dhsprogram.com` URL or a sample `/rest/dhs/data?…` link — "
+            "those are for the DHS catalog; enter your key under *DHS API key*. Update *Backend connection*."
         )
     if "/rest/dhs" in path_l:
         raise ValueError(
-            "Vous avez probablement collé une **URL de requête DHS Program** (`/rest/dhs/...`). "
-            "Mettez ici uniquement la **racine de votre API** EDHS (ex. `http://127.0.0.1:8000/api/v1`), "
-            "pas l’URL STATcompiler."
+            "You likely pasted a **DHS Program request URL** (`/rest/dhs/...`). "
+            "Enter only the **root of your EDHS API** (e.g. `http://127.0.0.1:8000/api/v1`), "
+            "not the STATcompiler URL."
         )
 
 
@@ -707,7 +707,7 @@ def render_choropleth(geojson: Dict[str, Any], value_key: str = "value") -> str:
 # -----------------------------------------------------------------------------
 
 st.set_page_config(
-    page_title="DHS Hybrid Plugin Plateform",
+    page_title="DHS Hybrid Plugin Platform",
     page_icon="📊",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -794,7 +794,7 @@ if "edhs_nav_pending" in st.session_state:
 # -----------------------------------------------------------------------------
 # Sidebar: Navigation menu
 # -----------------------------------------------------------------------------
-st.sidebar.markdown("### 📊 DHS Hybrid Plugin Plateform")
+st.sidebar.markdown("### 📊 DHS Hybrid Plugin Platform")
 st.sidebar.markdown("---")
 
 nav_options = ["🏠 Home", "📖 Onboarding", "📡 DHS Program API", "📋 DHS Indicators", "📂 Microdata Analysis", "📊 Custom Dashboard", "⚙️ Settings"]
@@ -833,8 +833,8 @@ with st.sidebar.expander("Backend connection", expanded=False):
         "Backend base URL",
         key="edhs_api_base_url",
         help=(
-            "Personnalisable : racine de **votre** API EDHS/FastAPI (localhost, Render, IP, domaine, chemin `/api/v1`). "
-            "Pas `api.dhsprogram.com` ni une URL `/rest/dhs/data?…` — la clé DHS va dans *DHS API key*."
+            "Fully customizable: root of **your** EDHS/FastAPI API (localhost, Render, IP, custom domain, `/api/v1` path). "
+            "Not `api.dhsprogram.com` or a `/rest/dhs/data?…` sample URL — use *DHS API key* for your DHS key."
         ),
     )
     base_url = _normalize_backend_base_url(st.session_state.get("edhs_api_base_url") or "")
@@ -1028,13 +1028,15 @@ if uploaded_file is not None:
         st.session_state["edhs_upload_file_name"] = uploaded_file.name
     file_bytes = st.session_state.get("edhs_upload_file_bytes") or b""
 
-    st.sidebar.caption(f"Fichier : **{uploaded_file.name}** — cliquez sur le bouton ci-dessous pour **l’envoyer au serveur** et créer la session.")
+    st.sidebar.caption(
+        f"File: **{uploaded_file.name}** — click **Upload dataset** below to send it to the server and create a session."
+    )
     if st.sidebar.button("Upload dataset", type="primary"):
         if not file_bytes:
-            st.session_state["edhs_upload_error"] = "Le fichier est vide. Resélectionnez le fichier et réessayez."
+            st.session_state["edhs_upload_error"] = "The file is empty. Select the file again and retry."
             st.rerun()
         try:
-            with st.sidebar.spinner("Envoi en cours…"):
+            with st.sidebar.spinner("Uploading…"):
                 resp = api_upload(
                     base_url,
                     tenant_id,
@@ -1095,7 +1097,7 @@ if session_id:
         st.session_state.pop("edhs_last_geojson", None)
         st.session_state.pop("edhs_last_grouped", None)
         st.session_state.pop("edhs_upload_error", None)
-        # Ne pas effacer l'historique des sessions pour la comparaison multi-pays
+        # Keep session history for multi-country comparison
         st.rerun()
 else:
     st.sidebar.info(
@@ -1105,7 +1107,7 @@ else:
 # Main area – header
 st.markdown(
     '<div class="edhs-header">'
-    '<h1>DHS Hybrid Plugin Plateform</h1>'
+    '<h1>DHS Hybrid Plugin Platform</h1>'
     '<p>Explore DHS/EDHS data — fetch indicators, visualize trends, and export for research.</p>'
     '</div>',
     unsafe_allow_html=True,
@@ -1115,7 +1117,7 @@ st.markdown(
 if nav_choice == "🏠 Home":
     st.markdown("### Welcome")
     st.markdown(
-        "The **DHS Hybrid Plugin Plateform** lets you explore Demographic and Health Survey (DHS) data: "
+        "The **DHS Hybrid Plugin Platform** lets you explore Demographic and Health Survey (DHS) data: "
         "fetch indicators from the DHS Program API, visualize trends, compute from microdata, and export for research."
     )
     col1, col2, col3 = st.columns(3)
@@ -1151,7 +1153,7 @@ if nav_choice == "🏠 Home":
     st.stop()
 
 elif nav_choice == "📖 Onboarding":
-    st.markdown("## 📖 Welcome to the DHS Hybrid Plugin Plateform")
+    st.markdown("## 📖 Welcome to the DHS Hybrid Plugin Platform")
     st.markdown(
         "This platform helps you explore **Demographic and Health Survey (DHS)** data: "
         "fetch indicators from the DHS Program API, visualize trends, compute from microdata, and export for research."
@@ -1594,7 +1596,7 @@ elif nav_choice == "📂 Microdata Analysis":
     if not st.session_state.get("edhs_session_id"):
         st.info("👈 **Open the sidebar** to create a session: **Try with sample data**, **Load from URL**, or upload a .dta/.sav file.")
         if st.session_state.get("edhs_upload_error"):
-            st.error("**Erreur d’upload :** " + st.session_state["edhs_upload_error"])
+            st.error("**Upload error:** " + st.session_state["edhs_upload_error"])
             st.caption(
                 "Use the sidebar to reselect a file or try sample data below."
             )
@@ -1626,12 +1628,12 @@ if nav_choice == "📂 Microdata Analysis" and not session_id:
     upload_name = st.session_state.get("edhs_upload_file_name")
     upload_bytes = st.session_state.get("edhs_upload_file_bytes")
     if upload_name and upload_bytes:
-        st.info(f"**Fichier sélectionné :** {upload_name} — envoyez-le au serveur pour créer la session.")
-        if st.button("Envoyer le fichier et créer la session", type="primary", key="upload_from_main"):
+        st.info(f"**Selected file:** {upload_name} — send it to the server to create the session.")
+        if st.button("Send file and create session", type="primary", key="upload_from_main"):
             try:
-                st.info("Envoi du fichier en cours (cela peut prendre 1 à 2 min pour un gros fichier)…")
-                st.warning("Ne fermez pas cette page.")
-                with st.spinner("Envoi en cours…"):
+                st.info("Uploading file (large files may take 1–2 minutes)…")
+                st.warning("Do not close this page.")
+                with st.spinner("Uploading…"):
                     resp = api_upload(
                         base_url,
                         tenant_id,
@@ -1650,7 +1652,7 @@ if nav_choice == "📂 Microdata Analysis" and not session_id:
                 st.session_state.pop("edhs_upload_error", None)
                 st.session_state.pop("edhs_upload_file_bytes", None)
                 st.session_state.pop("edhs_upload_file_name", None)
-                st.success("Session créée. Vous pouvez maintenant choisir un indicateur.")
+                st.success("Session created. You can now select an indicator.")
                 st.rerun()
             except requests.HTTPError as e:
                 detail = str(e)
@@ -1671,14 +1673,14 @@ if nav_choice == "📂 Microdata Analysis" and not session_id:
                 st.rerun()
     st.markdown("---")
     # Friendly empty state with steps and CTA
-    st.markdown("### Démarrer")
+    st.markdown("### Getting started")
     st.markdown(
-        "**Vérifiez d’abord :** le backend doit être démarré (ex. `uvicorn edhs_core.main:app --reload`) et l’URL dans la barre latérale doit pointer vers l’API (ex. `http://127.0.0.1:8000/api/v1`)."
+        "**First:** start the backend (e.g. `uvicorn edhs_core.main:app --reload`) and set **Backend base URL** in the sidebar to your API root (e.g. `http://127.0.0.1:8000/api/v1`)."
     )
     st.markdown(
-        "1. **Vérifier la connexion** (barre latérale à gauche) — l’URL de l’API doit être correcte.  \n"
-        "2. **Créer une session** — dans la barre latérale : **Try with sample data**, **Load from URL** (lien direct .dta/.sav/.zip), ou envoyer un fichier .dta/.sav puis **Upload dataset**.  \n"
-        "3. **Choisir un indicateur** puis lancer **Compute** ou **Compute & show map**."
+        "1. **Check the connection** (sidebar on the left) — the API URL must be correct.  \n"
+        "2. **Create a session** — in the sidebar: **Try with sample data**, **Load from URL** (direct .dta/.sav/.zip link), or upload a .dta/.sav file then **Upload dataset**.  \n"
+        "3. **Pick an indicator** then run **Compute** or **Compute & show map**."
     )
     st.markdown("---")
     col1, col2, col3 = st.columns([1, 2, 1])
@@ -1722,12 +1724,14 @@ if "edhs_indicators" not in st.session_state:
             base_url, tenant_id, bearer_token or None
         )
     except Exception as e:
-        st.error("**Impossible de charger les indicateurs.** Vérifiez que le backend est démarré (URL dans la barre latérale) et réessayez.")
+        st.error(
+            "**Could not load indicators.** Check that the backend is running and the sidebar API URL is correct, then try again."
+        )
         st.caption(str(e))
-        if st.button("Réessayer", key="retry_indicators"):
+        if st.button("Retry", key="retry_indicators"):
             st.session_state.pop("edhs_indicators", None)
             st.rerun()
-        if st.button("Effacer la session et recommencer", key="clear_after_indicator_fail"):
+        if st.button("Clear session and start over", key="clear_after_indicator_fail"):
             st.session_state.pop("edhs_session_id", None)
             st.session_state.pop("edhs_indicators", None)
             st.session_state.pop("edhs_survey_country_code", None)
@@ -1738,8 +1742,8 @@ if "edhs_indicators" not in st.session_state:
 
 indicators = st.session_state["edhs_indicators"]
 if not indicators:
-    st.warning("Aucun indicateur disponible. Vérifiez le backend.")
-    if st.button("Réessayer", key="retry_indicators2"):
+    st.warning("No indicators available. Check the backend.")
+    if st.button("Retry", key="retry_indicators2"):
         st.session_state.pop("edhs_indicators", None)
         st.rerun()
     st.stop()
@@ -1767,14 +1771,14 @@ if survey_country or survey_year or survey_type:
         parts.append(str(survey_year))
     label = " ".join(parts) + source_label
     st.success(
-        f"**Session active : {label}** — 1) Choisissez un indicateur, 2) (optionnel) ajustez les options avancées, 3) lancez **Compute** ou **Compute & show map**."
+        f"**Active session: {label}** — 1) Choose an indicator, 2) optionally adjust advanced options, 3) run **Compute** or **Compute & show map**."
     )
 else:
     st.success(
-        f"**Session active**{source_label} — 1) Choisissez un indicateur, 2) (optionnel) ajustez les options avancées, 3) lancez **Compute** ou **Compute & show map**."
+        f"**Active session**{source_label} — 1) Choose an indicator, 2) optionally adjust advanced options, 3) run **Compute** or **Compute & show map**."
     )
 
-st.markdown("### 2. Choisir l'indicateur et le niveau géographique")
+st.markdown("### 2. Choose the indicator and geographic level")
 
 # Selection (mode simple)
 col1, col2 = st.columns([2, 1])
@@ -1792,9 +1796,9 @@ with col2:
     )
     admin_level = st.number_input("Admin level", min_value=0, max_value=5, value=1)
 
-# Options avancées (poids et colonnes d'admin)
-with st.expander("Options avancées (poids DHS et colonnes d'unités admin)", expanded=False):
-    st.caption("La plupart du temps, vous pouvez garder ces valeurs par défaut.")
+# Advanced options (weights and admin columns)
+with st.expander("Advanced options (DHS weights and admin unit columns)", expanded=False):
+    st.caption("Most of the time you can keep the default values.")
     col_a, col_b = st.columns(2)
     with col_a:
         use_weights = st.checkbox("Use DHS weights", value=True)
@@ -1803,7 +1807,7 @@ with st.expander("Options avancées (poids DHS et colonnes d'unités admin)", ex
         micro_admin = st.text_input("Microdata admin column", value="admin1_code")
         boundary_admin = st.text_input("Boundary admin column", value="admin_id")
 
-st.markdown("### 3. Désagréger et calculer l'indicateur")
+st.markdown("### 3. Disaggregate and compute the indicator")
 
 # Disaggregation
 st.subheader("Disaggregation")
@@ -1873,14 +1877,14 @@ with cols_btn[0]:
 
 # Compute multiple indicators into a table
 with cols_btn[1]:
-    # By défaut, on propose le même indicateur ; l'utilisateur peut en ajouter d'autres.
+    # By default the current indicator is selected; add more as needed.
     multi_labels = list(ind_options.keys())
     default_multi = [ind_label]
     selected_multi = st.multiselect(
         "Multiple indicators (table)",
         options=multi_labels,
         default=default_multi,
-        help="Sélectionnez un ou plusieurs indicateurs à calculer et à afficher sous forme de tableau.",
+        help="Select one or more indicators to compute and show in a table.",
     )
     if st.button("Compute multiple indicators (table)"):
         rows_multi = []
@@ -1911,7 +1915,7 @@ with cols_btn[1]:
                     }
                 )
             except Exception as e:
-                st.error(f"Erreur pour {lbl}: {e}")
+                st.error(f"Error for {lbl}: {e}")
         if rows_multi:
             st.session_state["edhs_last_multi"] = rows_multi
 
@@ -2036,8 +2040,8 @@ st.markdown("### 4. Multi-country comparison (same indicator)")
 sessions_history = st.session_state.get("edhs_sessions_history", [])
 if len(sessions_history) < 2:
     st.caption(
-        "Chargez au moins **deux fichiers** (ou utilisez plusieurs fois le bouton *Try with sample data*) "
-        "pour comparer un indicateur entre pays / enquêtes."
+        "Load at least **two datasets** (or use **Try with sample data** multiple times) "
+        "to compare one indicator across countries or surveys."
     )
 else:
     options_sessions: dict[str, Dict[str, Any]] = {}
@@ -2061,10 +2065,10 @@ else:
         default_labels = list(options_sessions.keys())[:2]
 
     selected_labels = st.multiselect(
-        "Sessions à comparer",
+        "Sessions to compare",
         options=list(options_sessions.keys()),
         default=default_labels,
-        help="Sélectionnez deux sessions ou plus (pays/enquêtes) pour comparer l'indicateur choisi.",
+        help="Select two or more sessions (countries/surveys) to compare the selected indicator.",
     )
 
     if st.button("Compute multi-country comparison"):
@@ -2101,7 +2105,7 @@ else:
                     }
                 )
             except Exception as e:
-                st.error(f"Erreur pour {lbl}: {e}")
+                st.error(f"Error for {lbl}: {e}")
         if rows_cmp:
             st.session_state["edhs_last_multi_country"] = {
                 "indicator_id": indicator_id,

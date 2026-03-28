@@ -33,7 +33,7 @@ Copy the entire `edhs_qgis_plugin` folder into the plugins folder so you have:
 
 ### 4. Open the plugin
 
-- **Menu:** Plugins → DHS Hybrid Plugin Plateform
+- **Menu:** Plugins → DHS Hybrid Plugin Platform
 - **Toolbar:** Click the EDHS icon (if visible)
 
 ## Requirements

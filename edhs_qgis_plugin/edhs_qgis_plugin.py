@@ -166,7 +166,7 @@ class EdhsDialog(QDialog):
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("DHS Hybrid Plugin Plateform")
+        self.setWindowTitle("DHS Hybrid Plugin Platform")
         self.setMinimumWidth(480)
 
         self.api_config = ApiConfig()
@@ -699,9 +699,9 @@ class EdhsQgisPlugin:
 
         from qgis.PyQt.QtWidgets import QAction  # Imported lazily for QGIS environment
 
-        self._action = QAction("DHS Hybrid Plugin Plateform", self.iface.mainWindow())
+        self._action = QAction("DHS Hybrid Plugin Platform", self.iface.mainWindow())
         self._action.triggered.connect(self._show_dialog)
-        self.iface.addPluginToMenu("&DHS Hybrid Plugin Plateform", self._action)
+        self.iface.addPluginToMenu("&DHS Hybrid Plugin Platform", self._action)
         self.iface.addToolBarIcon(self._action)
 
     def unload(self) -> None:
@@ -710,7 +710,7 @@ class EdhsQgisPlugin:
         """
 
         if self._action is not None:
-            self.iface.removePluginMenu("&DHS Hybrid Plugin Plateform", self._action)
+            self.iface.removePluginMenu("&DHS Hybrid Plugin Platform", self._action)
             self.iface.removeToolBarIcon(self._action)
         self._action = None
         self._dialog = None
