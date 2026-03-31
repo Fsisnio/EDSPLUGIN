@@ -966,14 +966,15 @@ else:
                 else:
                     st.error("Cannot reach backend. Check URL and tenant.")
 
-# Connection status badge (lazy check on first load; short timeout so app stays responsive)
+# Connection status badge (lazy check on first load)
+_health_timeout = float(os.environ.get("EDHS_HEALTHCHECK_TIMEOUT", "10"))
 if "edhs_connection_ok" not in st.session_state:
     try:
         _require_edhs_backend_base_url(base_url)
         r = requests.get(
             f"{base_url}/health",
             headers=get_headers(tenant_id, bearer_token or None, dhs_api_key or None),
-            timeout=2,
+            timeout=_health_timeout,
         )
         st.session_state["edhs_connection_ok"] = r.status_code == 200
     except Exception:
@@ -982,6 +983,11 @@ if st.session_state.get("edhs_connection_ok"):
     st.sidebar.caption("🟢 Backend connected")
 else:
     st.sidebar.caption("🔴 Backend not reached")
+    if _hide_backend_connection_ui():
+        st.sidebar.caption(
+            "API should run on port 8000 in the same Docker container. "
+            "In Render: clear **Docker Command** (use Dockerfile `CMD`), open **Logs** and confirm Uvicorn starts."
+        )
 
 st.sidebar.divider()
 st.sidebar.subheader("Dataset / session")

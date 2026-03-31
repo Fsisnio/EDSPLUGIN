@@ -1,8 +1,28 @@
+import json
 from functools import lru_cache
 from typing import List, Optional
 
-from pydantic import AnyHttpUrl, Field, PostgresDsn, validator
-from pydantic_settings import BaseSettings
+from pydantic import AnyHttpUrl, Field, PostgresDsn, TypeAdapter, computed_field
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+_cors_list_adapter = TypeAdapter(List[AnyHttpUrl])
+
+
+def _parse_cors_env(raw: str) -> List[AnyHttpUrl]:
+    """Accept unset/empty, comma-separated URLs, or a JSON list (pydantic-settings json-decodes only str fields)."""
+    s = (raw or "").strip()
+    if not s:
+        return []
+    if s.startswith("["):
+        try:
+            parsed = json.loads(s)
+        except json.JSONDecodeError:
+            return []
+        if not isinstance(parsed, list):
+            return []
+        return _cors_list_adapter.validate_python(parsed)
+    parts = [p.strip() for p in s.split(",") if p.strip()]
+    return _cors_list_adapter.validate_python(parts)
 
 
 class Settings(BaseSettings):
@@ -24,13 +44,17 @@ class Settings(BaseSettings):
     DEBUG: bool = False
     LOG_LEVEL: str = "INFO"
 
-    BACKEND_CORS_ORIGINS: List[AnyHttpUrl] = Field(default_factory=list)
+    # Env must be a plain str: List[...] triggers json.loads() in pydantic-settings before validators run.
+    backend_cors_origins_env: str = Field(
+        default="",
+        validation_alias="BACKEND_CORS_ORIGINS",
+        exclude=True,
+    )
 
-    @validator("BACKEND_CORS_ORIGINS", pre=True)
-    def assemble_cors_origins(cls, v):  # type: ignore[override]
-        if isinstance(v, str) and not v.startswith("["):
-            return [origin.strip() for origin in v.split(",") if origin.strip()]
-        return v
+    @computed_field
+    @property
+    def BACKEND_CORS_ORIGINS(self) -> List[AnyHttpUrl]:
+        return _parse_cors_env(self.backend_cors_origins_env)
 
     # -------------------------------------------------------------------------
     # DHS compliance
@@ -84,10 +108,12 @@ class Settings(BaseSettings):
     # Example: {ADMIN_BOUNDARIES_ROOT}/{country_code}/ADM{level}.gpkg
     ADMIN_BOUNDARIES_ROOT: str = "/opt/edhs/admin_boundaries"
 
-    class Config:
-        case_sensitive = True
-        env_file = ".env"
-        env_file_encoding = "utf-8"
+    model_config = SettingsConfigDict(
+        case_sensitive=True,
+        env_file=".env",
+        env_file_encoding="utf-8",
+        env_ignore_empty=True,
+    )
 
 
 @lru_cache()
