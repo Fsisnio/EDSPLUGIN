@@ -184,8 +184,9 @@ async def create_mock_session(
     """
     Create a synthetic in-memory session for testing.
 
-    Optional query params: survey_country_code (e.g. ETH), survey_year (e.g. 2019),
-    survey_type (e.g. DHS). Stored with the session for UI pre-fill.
+    Optional query params apply only to the **synthetic** fallback (no BJBR71 file).
+    If `data/BJBR71FL.DTA` is present, the session is always Benin (BJ) 2017 DHS microdata
+    so labels match the rows (sidebar/API country hints are ignored for that branch).
     """
     year_int: Optional[int] = None
     if survey_year and survey_year.strip():
@@ -212,13 +213,14 @@ async def create_mock_session(
             # Add admin1_code from v024 for spatial aggregation (matches ADM1_1, ADM1_2, ...)
             if "v024" in df.columns and "admin1_code" not in df.columns:
                 df["admin1_code"] = "ADM1_" + df["v024"].astype(str)
+            # Metadata must match the file (Benin DHS7); do not relabel as sidebar/API country.
             session_id = await session_manager.create_session_from_dataframe(
                 tenant_id=tenant_id,
                 df=df,
                 filename=benin_path.name,
-                survey_country_code=survey_country_code or "BJ",
-                survey_year=year_int or 2017,
-                survey_type=survey_type or "DHS",
+                survey_country_code="BJ",
+                survey_year=2017,
+                survey_type="DHS",
             )
             session = session_manager.get_session(tenant_id=tenant_id, session_id=session_id)
             return DatasetUploadResponse(

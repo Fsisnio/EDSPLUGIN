@@ -362,6 +362,61 @@ def get_headers(
     return h
 
 
+# STATcompiler / DHS Program API indicator IDs → pluggable microdata indicator `id` (see edhs_core.indicators).
+DHS_API_INDICATOR_TO_MICRODATA: Dict[str, str] = {
+    "FE_FRTR_W_A15": "total_fertility_rate",
+    "FE_FRTR_W_TFR": "total_fertility_rate",
+    "CN_ANMC_C_ANY": "modern_contraception_rate",
+    "CN_ANMC_W_ANY": "modern_contraception_rate",
+    "CN_ANMC_C_MOD": "modern_contraception_rate",
+    "CN_NUTS_C_HA2": "stunting_prevalence",
+    "CN_NUTR_C_HA2": "stunting_prevalence",
+}
+
+
+def _first_iso_from_dhs_fetch_csv(s: Optional[str]) -> Optional[str]:
+    if not s or not str(s).strip():
+        return None
+    first = str(s).split(",")[0].strip().upper()
+    if len(first) < 2:
+        return None
+    return first[:3]
+
+
+def _map_dhs_api_indicator_to_microdata_id(dhs_id: str) -> Optional[str]:
+    u = dhs_id.strip().upper()
+    if u in DHS_API_INDICATOR_TO_MICRODATA:
+        return DHS_API_INDICATOR_TO_MICRODATA[u]
+    if u.startswith("FE_FRTR"):
+        return "total_fertility_rate"
+    if "ANMC" in u or u.startswith("CN_CP"):
+        return "modern_contraception_rate"
+    if "NUTS" in u or "HA2" in u:
+        return "stunting_prevalence"
+    return None
+
+
+def _first_micro_indicator_from_dhs_fetch(csv_ids: Optional[str]) -> Optional[str]:
+    if not csv_ids:
+        return None
+    for part in str(csv_ids).split(","):
+        m = _map_dhs_api_indicator_to_microdata_id(part.strip())
+        if m:
+            return m
+    return None
+
+
+def _microdata_country_default_from_state() -> str:
+    sc = st.session_state.get("edhs_survey_country_code")
+    if sc:
+        return str(sc).strip().upper()[:3]
+    fc = st.session_state.get("edhs_dhs_fetch_countries")
+    iso = _first_iso_from_dhs_fetch_csv(str(fc) if fc else "")
+    if iso:
+        return iso
+    return "ETH"
+
+
 def _normalize_backend_base_url(raw: str) -> str:
     """
     Strip query/fragment and trailing slash so pasted URLs still work as a path prefix
@@ -375,6 +430,29 @@ def _normalize_backend_base_url(raw: str) -> str:
     p = urlparse(s)
     path = (p.path or "").rstrip("/")
     return urlunparse((p.scheme, p.netloc, path, "", "", ""))
+
+
+def _raise_for_status_with_detail(r: requests.Response) -> None:
+    """Call raise_for_status; on error include FastAPI `detail` in the message (Streamlit users otherwise only see a generic 404 URL)."""
+    try:
+        r.raise_for_status()
+    except requests.HTTPError as e:
+        detail: Any = None
+        try:
+            body = r.json()
+            detail = body.get("detail")
+        except Exception:
+            pass
+        if detail is not None:
+            if isinstance(detail, list):
+                extra = repr(detail)
+            else:
+                extra = str(detail)
+            raise requests.HTTPError(
+                f"{e}\nServer detail: {extra}",
+                response=r,
+            ) from None
+        raise
 
 
 def _require_edhs_backend_base_url(base_url: str) -> None:
@@ -728,7 +806,7 @@ def api_spatial_aggregate(
         },
         timeout=120,
     )
-    r.raise_for_status()
+    _raise_for_status_with_detail(r)
     return r.json()
 
 
@@ -917,6 +995,18 @@ def _hide_backend_connection_ui() -> bool:
     if (os.environ.get("API_BASE_URL") or "").strip():
         return True
     return False
+
+
+def _hide_choropleth_ui() -> bool:
+    """
+    Hide map / spatial aggregation controls when admin boundary GeoPackages are not deployed.
+
+    Set EDHS_HIDE_CHOROPLETH=true (e.g. on Render) to avoid 404s on /spatial/aggregate.
+    EDHS_SHOW_CHOROPLETH=true forces the controls visible (overrides hide).
+    """
+    if os.environ.get("EDHS_SHOW_CHOROPLETH", "").strip().lower() in ("1", "true", "yes"):
+        return False
+    return os.environ.get("EDHS_HIDE_CHOROPLETH", "").strip().lower() in ("1", "true", "yes")
 
 
 if _hide_backend_connection_ui():
@@ -1984,22 +2074,61 @@ else:
         f"**Active session**{source_label} — 1) Choose an indicator, 2) optionally adjust advanced options, 3) run **Compute** or **Compute & show map**."
     )
 
-st.markdown("### 2. Choose the indicator and geographic level")
+fetch_countries_meta = st.session_state.get("edhs_dhs_fetch_countries")
+if fetch_countries_meta and survey_country:
+    _f_iso = _first_iso_from_dhs_fetch_csv(str(fetch_countries_meta))
+    _s_iso = str(survey_country).strip().upper()[:3]
+    if _f_iso and _s_iso and _f_iso != _s_iso:
+        st.warning(
+            f"**Data alignment:** DHS Program API data in this browser session targets **{_f_iso}**, "
+            f"but this microdata file is labeled **{_s_iso}**. Compare API aggregates to microdata outputs "
+            "only when both describe the **same survey / country**."
+        )
 
-# Selection (mode simple)
+st.markdown("### 2. Choose the indicator and geographic level")
+st.caption(
+    "**Country** and **indicator** defaults follow your microdata session when present; otherwise they "
+    "follow the last **DHS Program API** fetch (country list and indicator IDs) so the same research slice "
+    "carries into analysis."
+)
+
+ind_options = {f"{i['id']} – {i['name']}": i["id"] for i in indicators}
+_labels = list(ind_options.keys())
+_micro_sync_sig = (
+    st.session_state.get("edhs_session_id"),
+    st.session_state.get("edhs_dhs_fetch_countries"),
+    st.session_state.get("edhs_dhs_fetch_indicators"),
+    st.session_state.get("edhs_survey_country_code"),
+)
+if st.session_state.get("_edhs_micro_sync_sig") != _micro_sync_sig:
+    st.session_state["_edhs_micro_sync_sig"] = _micro_sync_sig
+    st.session_state["edhs_micro_country_iso"] = _microdata_country_default_from_state()
+    _pref = _first_micro_indicator_from_dhs_fetch(st.session_state.get("edhs_dhs_fetch_indicators"))
+    if _pref and _labels:
+        for _lbl in _labels:
+            if ind_options[_lbl] == _pref:
+                st.session_state["edhs_micro_indicator_select"] = _lbl
+                break
+        else:
+            st.session_state["edhs_micro_indicator_select"] = _labels[0]
+    elif "edhs_micro_indicator_select" not in st.session_state and _labels:
+        st.session_state["edhs_micro_indicator_select"] = _labels[0]
+
+if "edhs_micro_country_iso" not in st.session_state:
+    st.session_state["edhs_micro_country_iso"] = _microdata_country_default_from_state()
+if "edhs_micro_indicator_select" not in st.session_state and _labels:
+    st.session_state["edhs_micro_indicator_select"] = _labels[0]
+if st.session_state.get("edhs_micro_indicator_select") not in ind_options and _labels:
+    st.session_state["edhs_micro_indicator_select"] = _labels[0]
+
 col1, col2 = st.columns([2, 1])
 
 with col1:
-    ind_options = {f"{i['id']} – {i['name']}": i["id"] for i in indicators}
-    ind_label = st.selectbox("Indicator", list(ind_options.keys()))
+    ind_label = st.selectbox("Indicator", _labels, key="edhs_micro_indicator_select")
     indicator_id = ind_options[ind_label]
 
 with col2:
-    country_code = st.text_input(
-        "Country (ISO)",
-        value=st.session_state.get("edhs_survey_country_code") or "ETH",
-        max_chars=3,
-    )
+    country_code = st.text_input("Country (ISO)", key="edhs_micro_country_iso", max_chars=3)
     admin_level = st.number_input("Admin level", min_value=0, max_value=5, value=1)
 
 # Advanced options (weights and admin columns)
@@ -2061,7 +2190,16 @@ if group_by_column and st.button("Compute disaggregated"):
 
 st.divider()
 
-cols_btn = st.columns(3)
+_choropleth_hidden = _hide_choropleth_ui()
+if not _choropleth_hidden:
+    _boundaries_root = os.environ.get("ADMIN_BOUNDARIES_ROOT", "/opt/edhs/admin_boundaries")
+    st.caption(
+        f"**Choropleth** needs admin boundary GeoPackages on the API server: "
+        f"`{_boundaries_root}/{{ISO3}}/ADM{{level}}.gpkg`. If that file is missing, you get 404 — "
+        "the error message below now includes the API’s **Server detail** line."
+    )
+
+cols_btn = st.columns(2 if _choropleth_hidden else 3)
 
 # Compute scalar indicator (single)
 with cols_btn[0]:
@@ -2125,28 +2263,29 @@ with cols_btn[1]:
         if rows_multi:
             st.session_state["edhs_last_multi"] = rows_multi
 
-# Compute spatial and show map
-with cols_btn[2]:
-    if st.button("Compute & show map (choropleth)"):
-        try:
-            resp = api_spatial_aggregate(
-                base_url,
-                tenant_id,
-                bearer_token or None,
-                session_id,
-                indicator_id,
-                country_code,
-                admin_level,
-                micro_admin,
-                boundary_admin,
-                use_weights,
-                weight_var,
-            )
-            st.session_state["edhs_last_geojson"] = resp["geojson"]
-            st.session_state["edhs_last_spatial_response"] = resp
-            st.session_state["edhs_last_result"] = None
-        except Exception as e:
-            st.error(str(e))
+# Compute spatial and show map (optional; off when boundary data is not deployed)
+if not _choropleth_hidden:
+    with cols_btn[2]:
+        if st.button("Compute & show map (choropleth)"):
+            try:
+                resp = api_spatial_aggregate(
+                    base_url,
+                    tenant_id,
+                    bearer_token or None,
+                    session_id,
+                    indicator_id,
+                    country_code,
+                    admin_level,
+                    micro_admin,
+                    boundary_admin,
+                    use_weights,
+                    weight_var,
+                )
+                st.session_state["edhs_last_geojson"] = resp["geojson"]
+                st.session_state["edhs_last_spatial_response"] = resp
+                st.session_state["edhs_last_result"] = None
+            except Exception as e:
+                st.error(str(e))
 
 # Display last scalar result
 if st.session_state.get("edhs_last_result"):
@@ -2358,7 +2497,7 @@ if st.session_state.get("edhs_last_multi_country"):
         pass
 
 # Display map and table from spatial result
-if st.session_state.get("edhs_last_geojson"):
+if not _choropleth_hidden and st.session_state.get("edhs_last_geojson"):
     geojson = st.session_state["edhs_last_geojson"]
     st.subheader("Choropleth map")
     html = render_choropleth(geojson, "value")
