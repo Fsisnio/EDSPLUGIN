@@ -21,3 +21,9 @@ services:
         sync: false  # Add your key from https://api.dhsprogram.com/
       - key: BACKEND_CORS_ORIGINS
         sync: false  # Add your dashboard URL after deploy (e.g. https://edhs-webservice-xxx.onrender.com)
+      # Streamlit → same-container API (see scripts/run_webservice.sh)
+      - key: API_BASE_URL
+        value: http://127.0.0.1:8000/api/v1
+      - key: EDHS_HIDE_BACKEND_CONNECTION
+        value: "true"
+      # Optional: DHS_AUTO_FETCH=true  DHS_AUTO_COUNTRIES=SEN,KEN  DHS_AUTO_INDICATORS=FE_FRTR_W_TFR,CM_ECMR_C_IMR

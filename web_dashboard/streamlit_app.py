@@ -10,12 +10,48 @@ Connects to the FastAPI backend to:
 
 import json
 import os
-from typing import Any, Dict, List, Optional
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urlparse, urlunparse
 
 import pandas as pd
 import requests
 import streamlit as st
+
+try:
+    from dotenv import load_dotenv
+
+    _APP_DIR = Path(__file__).resolve().parent
+    load_dotenv(_APP_DIR.parent / ".env")
+    load_dotenv(_APP_DIR / ".env")
+except ImportError:
+    pass
+
+try:
+    from edhs_core.dhs_api.country_codes import ISO3_TO_DHS_ALPHA2 as _ISO3_TO_DHS
+except ImportError:
+    _ISO3_TO_DHS: Dict[str, str] = {
+        "ETH": "ET",
+        "BEN": "BJ",
+        "EGY": "EG",
+        "GHA": "GH",
+        "KEN": "KE",
+        "NGA": "NG",
+        "TZA": "TZ",
+        "UGA": "UG",
+        "ZAF": "ZA",
+        "BFA": "BF",
+        "MLI": "ML",
+        "RWA": "RW",
+        "SEN": "SN",
+        "TCD": "TD",
+        "CIV": "CI",
+        "CMR": "CM",
+        "COD": "CD",
+        "COG": "CG",
+        "MAR": "MA",
+        "TUN": "TN",
+    }
 
 try:
     from dhs_research_features import (
@@ -294,15 +330,6 @@ def _render_dhs_research_ui(
 # Configuration and API client
 # -----------------------------------------------------------------------------
 
-# Map 3-letter ISO codes to 2-letter DHS country codes (api.dhsprogram.com uses ISO 3166-1 alpha-2)
-_ISO3_TO_DHS: Dict[str, str] = {
-    "ETH": "ET", "BEN": "BJ", "EGY": "EG", "GHA": "GH", "KEN": "KE",
-    "NGA": "NG", "TZA": "TZ", "UGA": "UG", "ZAF": "ZA", "BFA": "BF",
-    "MLI": "ML", "RWA": "RW", "SEN": "SN", "TCD": "TD", "CIV": "CI",
-    "CMR": "CM", "COD": "CD", "COG": "CG", "MAR": "MA", "TUN": "TN",
-}
-
-
 def _to_dhs_country_code(raw: str) -> str:
     """Convert country input (2- or 3-letter) to DHS 2-letter code."""
     s = (raw or "").strip().upper()
@@ -311,6 +338,15 @@ def _to_dhs_country_code(raw: str) -> str:
     if len(s) >= 3 and s in _ISO3_TO_DHS:
         return _ISO3_TO_DHS[s]
     return s[:2]
+
+
+_DHS_ISO3_MULTI_OPTIONS: List[str] = sorted(_ISO3_TO_DHS.keys())
+_DHS_QUICK_INDICATOR_PRESETS: List[Tuple[str, str]] = [
+    ("Total fertility rate (TFR)", "FE_FRTR_W_TFR"),
+    ("Infant mortality rate", "CM_ECMR_C_IMR"),
+    ("Under-five mortality", "CM_ECMR_C_U5M"),
+    ("Modern contraception (women)", "FP_CUSE_W_MOD"),
+]
 
 
 def get_headers(
@@ -621,6 +657,47 @@ def api_dhs_data(
     return r.json()
 
 
+def api_dhs_data_fetch(
+    base_url: str,
+    tenant_id: str,
+    bearer_token: Optional[str],
+    country_ids: str,
+    indicator_ids: str,
+    survey_year_start: Optional[int] = None,
+    survey_year_end: Optional[int] = None,
+    dhs_api_key: Optional[str] = None,
+    *,
+    breakdown: Optional[str] = None,
+    post_filter_years: bool = True,
+    dedupe: bool = True,
+) -> Dict[str, Any]:
+    """
+    DHS STATcompiler data: one GET via backend /dhs-api/data/fetch with ISO3→DHS2 mapping
+    and post-filter / dedupe on the Data array.
+    """
+    payload: Dict[str, Any] = {
+        "country_ids": country_ids,
+        "indicator_ids": indicator_ids,
+        "post_filter_years": post_filter_years,
+        "dedupe": dedupe,
+    }
+    if survey_year_start is not None:
+        payload["survey_year_start"] = survey_year_start
+    if survey_year_end is not None:
+        payload["survey_year_end"] = survey_year_end
+    if breakdown:
+        payload["breakdown"] = breakdown
+    _require_edhs_backend_base_url(base_url)
+    r = requests.get(
+        f"{base_url}/dhs-api/data/fetch",
+        headers=get_headers(tenant_id, bearer_token, dhs_api_key),
+        params=payload,
+        timeout=90,
+    )
+    r.raise_for_status()
+    return r.json()
+
+
 def api_spatial_aggregate(
     base_url: str,
     tenant_id: str,
@@ -825,44 +902,69 @@ def _default_api_base_url() -> str:
     return "http://127.0.0.1:8000/api/v1"
 
 
-# Sidebar: connection (in expander to reduce clutter)
-with st.sidebar.expander("Backend connection", expanded=False):
-    if "edhs_api_base_url" not in st.session_state:
-        st.session_state["edhs_api_base_url"] = _default_api_base_url()
-    st.text_input(
-        "Backend base URL",
-        key="edhs_api_base_url",
-        help=(
-            "Fully customizable: root of **your** EDHS/FastAPI API (localhost, Render, IP, custom domain, `/api/v1` path). "
-            "Not `api.dhsprogram.com` or a `/rest/dhs/data?…` sample URL — use *DHS API key* for your DHS key."
-        ),
-    )
-    base_url = _normalize_backend_base_url(st.session_state.get("edhs_api_base_url") or "")
-    tenant_id = st.text_input("Tenant ID", value="demo-tenant")
-    bearer_token = st.text_input(
-        "JWT token (optional)",
-        type="password",
-        help="Bearer token for authenticated deployments.",
-    )
-    dhs_api_key = st.text_input(
-        "DHS API key (optional)",
-        type="password",
-        placeholder="Use your own key from api.dhsprogram.com",
-        help="Override the backend's DHS Program API key. Leave empty to use the server default.",
-    )
-    if st.button("Check connection"):
-        try:
-            _require_edhs_backend_base_url(base_url)
-        except ValueError as err:
-            st.session_state["edhs_connection_ok"] = False
-            st.error(str(err))
-        else:
-            ok = api_health(base_url, tenant_id, bearer_token or None, dhs_api_key or None)
-            st.session_state["edhs_connection_ok"] = ok
-            if ok:
-                st.success("Backend is reachable.")
+def _hide_backend_connection_ui() -> bool:
+    """
+    Skip the Backend connection form when the host preconfigures the API.
+
+    - EDHS_SHOW_BACKEND_CONNECTION=true: always show (debug).
+    - EDHS_HIDE_BACKEND_CONNECTION=true: hide.
+    - API_BASE_URL set (e.g. Render): hide so end users do not change the URL.
+    """
+    if os.environ.get("EDHS_SHOW_BACKEND_CONNECTION", "").strip().lower() in ("1", "true", "yes"):
+        return False
+    if os.environ.get("EDHS_HIDE_BACKEND_CONNECTION", "").strip().lower() in ("1", "true", "yes"):
+        return True
+    if (os.environ.get("API_BASE_URL") or "").strip():
+        return True
+    return False
+
+
+if _hide_backend_connection_ui():
+    base_url = _normalize_backend_base_url(_default_api_base_url())
+    tenant_id = (os.environ.get("EDHS_TENANT_ID") or "demo-tenant").strip() or "demo-tenant"
+    _bt = (os.environ.get("EDHS_JWT_TOKEN") or "").strip()
+    bearer_token: Optional[str] = _bt if _bt else None
+    _dk = (os.environ.get("EDHS_STREAMLIT_DHS_API_KEY") or "").strip()
+    dhs_api_key: Optional[str] = _dk if _dk else None
+    st.sidebar.caption("Backend API is preconfigured for this deployment.")
+else:
+    with st.sidebar.expander("Backend connection", expanded=False):
+        if "edhs_api_base_url" not in st.session_state:
+            st.session_state["edhs_api_base_url"] = _default_api_base_url()
+        st.text_input(
+            "Backend base URL",
+            key="edhs_api_base_url",
+            help=(
+                "Fully customizable: root of **your** EDHS/FastAPI API (localhost, Render, IP, custom domain, `/api/v1` path). "
+                "Not `api.dhsprogram.com` or a `/rest/dhs/data?…` sample URL — use *DHS API key* for your DHS key."
+            ),
+        )
+        base_url = _normalize_backend_base_url(st.session_state.get("edhs_api_base_url") or "")
+        tenant_id = st.text_input("Tenant ID", value="demo-tenant")
+        bearer_token = st.text_input(
+            "JWT token (optional)",
+            type="password",
+            help="Bearer token for authenticated deployments.",
+        )
+        dhs_api_key = st.text_input(
+            "DHS API key (optional)",
+            type="password",
+            placeholder="Use your own key from api.dhsprogram.com",
+            help="Override the backend's DHS Program API key. Leave empty to use the server default.",
+        )
+        if st.button("Check connection"):
+            try:
+                _require_edhs_backend_base_url(base_url)
+            except ValueError as err:
+                st.session_state["edhs_connection_ok"] = False
+                st.error(str(err))
             else:
-                st.error("Cannot reach backend. Check URL and tenant.")
+                ok = api_health(base_url, tenant_id, bearer_token or None, dhs_api_key or None)
+                st.session_state["edhs_connection_ok"] = ok
+                if ok:
+                    st.success("Backend is reachable.")
+                else:
+                    st.error("Cannot reach backend. Check URL and tenant.")
 
 # Connection status badge (lazy check on first load; short timeout so app stays responsive)
 if "edhs_connection_ok" not in st.session_state:
@@ -901,18 +1003,18 @@ st.sidebar.caption("Don't want sample data? Load data for your selected country:
 if st.sidebar.button(f"Fetch data for {country_code_dhs or 'country'} from DHS API", key="dhs_fetch_for_country"):
     try:
         with st.sidebar.spinner(f"Fetching data for {country_code_dhs}…"):
-            dhs_resp = api_dhs_data(
+            dhs_resp = api_dhs_data_fetch(
                 base_url,
                 tenant_id,
                 bearer_token or None,
-                country_ids=country_code_dhs,
-                indicator_ids="FE_FRTR_W_A15,CN_ANMC_C_ANY",  # Common indicators
+                country_ids=(sidebar_country or "ETH").strip().upper(),
+                indicator_ids="FE_FRTR_W_A15,CN_ANMC_C_ANY",
                 dhs_api_key=dhs_api_key or None,
                 survey_year_start=2000,
                 survey_year_end=2024,
             )
         st.session_state["edhs_dhs_api_data"] = dhs_resp
-        st.session_state["edhs_dhs_fetch_countries"] = country_code_dhs
+        st.session_state["edhs_dhs_fetch_countries"] = (sidebar_country or "ETH").strip().upper()
         st.session_state["edhs_dhs_fetch_indicators"] = "FE_FRTR_W_A15,CN_ANMC_C_ANY"
         st.sidebar.success(f"Loaded {len(dhs_resp.get('Data', []))} records for {country_code_dhs}. See DHS Program API section below.")
         st.rerun()
@@ -1213,29 +1315,113 @@ elif nav_choice == "📖 Onboarding":
     st.stop()
 
 elif nav_choice == "📡 DHS Program API":
-    # DHS Program API section (no session required)
     st.markdown("## 📡 DHS Program API – Indicators & Data")
     st.caption(
-        "Browse indicators and fetch aggregated data from the DHS Program STATcompiler (api.dhsprogram.com). "
-        "No session required."
+        "STATcompiler-style data: your backend performs a single GET to DHS `/data`, maps ISO3→two-letter "
+        "country codes, applies optional `breakdown`, then filters by survey year and dedupes the `Data` array. "
+        "Configure **Backend base URL** in the sidebar; a DHS key may be set server-side (`DHS_PROGRAM_API_KEY`)."
     )
-    with st.expander("Fetch data", expanded=True):
-        if st.button("Fetch Benin data (BJ)", key="dhs_fetch_benin_nav", type="primary"):
-            try:
-                with st.spinner("Fetching…"):
-                    dhs_resp = api_dhs_data(base_url, tenant_id, bearer_token or None, country_ids="BJ", indicator_ids="FE_FRTR_W_A15,CN_ANMC_C_ANY", survey_year_start=2000, survey_year_end=2024, dhs_api_key=dhs_api_key or None)
-                st.session_state["edhs_dhs_api_data"] = dhs_resp
-                st.session_state["edhs_dhs_fetch_countries"] = "BJ"
-                st.session_state["edhs_dhs_fetch_indicators"] = "FE_FRTR_W_A15,CN_ANMC_C_ANY"
-                st.session_state.pop("edhs_dhs_indicators", None)
-                st.success(f"Loaded {len(dhs_resp.get('Data', []))} records.")
-                st.rerun()
-            except Exception as e:
-                st.error(str(e))
+    auto_fetch = os.environ.get("DHS_AUTO_FETCH", "").strip().lower() in ("1", "true", "yes")
+    if (
+        auto_fetch
+        and st.session_state.get("edhs_dhs_api_data") is None
+        and "edhs_dhs_auto_fetch_tried" not in st.session_state
+    ):
+        st.session_state["edhs_dhs_auto_fetch_tried"] = True
+        cc_auto = os.environ.get("DHS_AUTO_COUNTRIES", "SEN,KEN,BEN,GHA")
+        ii_auto = os.environ.get("DHS_AUTO_INDICATORS", "FE_FRTR_W_TFR,CM_ECMR_C_IMR")
+        y0_auto = int(os.environ.get("DHS_AUTO_YEAR_START", "2000"))
+        y1_auto = int(os.environ.get("DHS_AUTO_YEAR_END", "2024"))
+        try:
+            _require_edhs_backend_base_url(base_url)
+            with st.spinner("Loading DHS data (automatic)…"):
+                dhs_auto = api_dhs_data_fetch(
+                    base_url,
+                    tenant_id,
+                    bearer_token or None,
+                    country_ids=cc_auto,
+                    indicator_ids=ii_auto,
+                    survey_year_start=y0_auto,
+                    survey_year_end=y1_auto,
+                    dhs_api_key=dhs_api_key or None,
+                )
+            st.session_state["edhs_dhs_api_data"] = dhs_auto
+            st.session_state["edhs_dhs_fetch_countries"] = cc_auto
+            st.session_state["edhs_dhs_fetch_indicators"] = ii_auto
+            st.session_state.pop("edhs_dhs_indicators", None)
+            st.success(f"Automatically loaded {len(dhs_auto.get('Data', []))} records.")
+            st.rerun()
+        except Exception as e:
+            st.info("Automatic DHS fetch was skipped or failed; use the form below. " + str(e))
+
+    with st.expander("Fetch data (quick)", expanded=True):
+        default_iso = ["SEN", "KEN", "BEN", "GHA"]
+        sel_iso = st.multiselect(
+            "Countries (ISO3)",
+            options=_DHS_ISO3_MULTI_OPTIONS,
+            default=[c for c in default_iso if c in _DHS_ISO3_MULTI_OPTIONS],
+            key="dhs_nav_iso3_multi",
+            help="Mapped to DHS two-letter codes before the API call.",
+        )
+        preset_labels = [p[0] for p in _DHS_QUICK_INDICATOR_PRESETS]
+        preset_ids = [p[1] for p in _DHS_QUICK_INDICATOR_PRESETS]
+        default_lbl = preset_labels[:2] if len(preset_labels) > 1 else preset_labels[:1]
+        sel_lbl = st.multiselect(
+            "Indicators",
+            options=preset_labels,
+            default=default_lbl,
+            key="dhs_nav_ind_presets",
+            help="Official DHS IndicatorId values (not every indicator is available for every country-year).",
+        )
+        dhs_breakdown = st.text_input(
+            "Breakdown (optional)",
+            value="",
+            key="dhs_nav_breakdown",
+            help="If supported by the DHS API for your indicators, pass a breakdown code here.",
+        )
+        dhs_year_col1, dhs_year_col2 = st.columns(2)
+        with dhs_year_col1:
+            dhs_year_start = st.number_input(
+                "Survey year from", min_value=1990, max_value=2030, value=2000, key="dhs_yr_start_nav"
+            )
+        with dhs_year_col2:
+            dhs_year_end = st.number_input(
+                "Survey year to", min_value=1990, max_value=2030, value=2024, key="dhs_yr_end_nav"
+            )
+        if st.button("Fetch DHS data", key="dhs_fetch_nav", type="primary"):
+            if not sel_iso or not sel_lbl:
+                st.error("Select at least one country and one indicator.")
+            else:
+                id_csv = ",".join(preset_ids[preset_labels.index(lab)] for lab in sel_lbl)
+                c_csv = ",".join(sel_iso)
+                try:
+                    with st.spinner("Fetching…"):
+                        dhs_resp = api_dhs_data_fetch(
+                            base_url,
+                            tenant_id,
+                            bearer_token or None,
+                            country_ids=c_csv,
+                            indicator_ids=id_csv,
+                            survey_year_start=int(dhs_year_start),
+                            survey_year_end=int(dhs_year_end),
+                            dhs_api_key=dhs_api_key or None,
+                            breakdown=dhs_breakdown.strip() or None,
+                        )
+                    st.session_state["edhs_dhs_api_data"] = dhs_resp
+                    st.session_state["edhs_dhs_fetch_countries"] = c_csv
+                    st.session_state["edhs_dhs_fetch_indicators"] = id_csv
+                    st.session_state.pop("edhs_dhs_indicators", None)
+                    st.success(f"Retrieved {len(dhs_resp.get('Data', []))} records.")
+                    st.rerun()
+                except Exception as e:
+                    st.error(str(e))
         if _DHS_RESEARCH_AVAILABLE and (SUGGESTED_BY_TOPIC or COMPARISON_TEMPLATES):
             with st.expander("💡 Suggested indicators & templates", expanded=False):
                 for topic, inds in list(SUGGESTED_BY_TOPIC.items())[:3]:
-                    if st.button(f"Use {topic}: " + ",".join(inds[:2]) + "…", key=f"dhs_nav_sug_{hash(topic) % 10**8}"):
+                    if st.button(
+                        f"Use {topic}: " + ",".join(inds[:2]) + "…",
+                        key=f"dhs_nav_sug_{hash(topic) % 10**8}",
+                    ):
                         st.session_state["edhs_dhs_fetch_indicators"] = ",".join(inds)
                         st.rerun()
                 for idx, (label, c, i) in enumerate(COMPARISON_TEMPLATES[:3]):
@@ -1243,28 +1429,42 @@ elif nav_choice == "📡 DHS Program API":
                         st.session_state["edhs_dhs_fetch_countries"] = c
                         st.session_state["edhs_dhs_fetch_indicators"] = i
                         st.rerun()
-        dhs_country_input = st.text_input("Country codes (e.g. ET,BJ,EG)", value=st.session_state.get("edhs_dhs_fetch_countries", "BJ"), key="dhs_countries_nav", help="ISO codes")
-        dhs_indicator_input = st.text_input("Indicator IDs", value=st.session_state.get("edhs_dhs_fetch_indicators", "FE_FRTR_W_A15,CN_ANMC_C_ANY"), key="dhs_indicators_nav")
-        dhs_year_col1, dhs_year_col2 = st.columns(2)
-        with dhs_year_col1:
-            dhs_year_start = st.number_input("Year from", min_value=1990, max_value=2030, value=2000, key="dhs_yr_start_nav")
-        with dhs_year_col2:
-            dhs_year_end = st.number_input("Year to", min_value=1990, max_value=2030, value=2024, key="dhs_yr_end_nav")
-        if st.button("Fetch DHS Program data", key="dhs_fetch_nav"):
-            if dhs_country_input.strip() and dhs_indicator_input.strip():
-                try:
-                    with st.spinner("Fetching…"):
-                        dhs_resp = api_dhs_data(base_url, tenant_id, bearer_token or None, country_ids=dhs_country_input.strip(), indicator_ids=dhs_indicator_input.strip(), survey_year_start=int(dhs_year_start), survey_year_end=int(dhs_year_end), dhs_api_key=dhs_api_key or None)
-                    st.session_state["edhs_dhs_api_data"] = dhs_resp
-                    st.session_state["edhs_dhs_fetch_countries"] = dhs_country_input.strip()
-                    st.session_state["edhs_dhs_fetch_indicators"] = dhs_indicator_input.strip()
-                    st.session_state.pop("edhs_dhs_indicators", None)
-                    st.success(f"Retrieved {len(dhs_resp.get('Data', []))} records.")
-                    st.rerun()
-                except Exception as e:
-                    st.error(str(e))
-            else:
-                st.error("Enter country codes and indicator IDs.")
+        with st.expander("Advanced: typed country & indicator codes (ISO3 or DHS alpha-2)", expanded=False):
+            dhs_country_input = st.text_input(
+                "Country codes (comma-separated)",
+                value=st.session_state.get("edhs_dhs_fetch_countries", "BJ"),
+                key="dhs_countries_nav",
+            )
+            dhs_indicator_input = st.text_input(
+                "Indicator IDs (comma-separated)",
+                value=st.session_state.get("edhs_dhs_fetch_indicators", "FE_FRTR_W_A15,CN_ANMC_C_ANY"),
+                key="dhs_indicators_nav",
+            )
+            if st.button("Fetch with typed codes", key="dhs_fetch_typed_nav"):
+                if dhs_country_input.strip() and dhs_indicator_input.strip():
+                    try:
+                        with st.spinner("Fetching…"):
+                            dhs_resp = api_dhs_data_fetch(
+                                base_url,
+                                tenant_id,
+                                bearer_token or None,
+                                country_ids=dhs_country_input.strip(),
+                                indicator_ids=dhs_indicator_input.strip(),
+                                survey_year_start=int(dhs_year_start),
+                                survey_year_end=int(dhs_year_end),
+                                dhs_api_key=dhs_api_key or None,
+                                breakdown=dhs_breakdown.strip() or None,
+                            )
+                        st.session_state["edhs_dhs_api_data"] = dhs_resp
+                        st.session_state["edhs_dhs_fetch_countries"] = dhs_country_input.strip()
+                        st.session_state["edhs_dhs_fetch_indicators"] = dhs_indicator_input.strip()
+                        st.session_state.pop("edhs_dhs_indicators", None)
+                        st.success(f"Retrieved {len(dhs_resp.get('Data', []))} records.")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(str(e))
+                else:
+                    st.error("Enter country codes and indicator IDs.")
     if st.session_state.get("edhs_dhs_api_data"):
         _render_dhs_research_ui(st.session_state["edhs_dhs_api_data"], st.session_state.get("edhs_dhs_fetch_countries", "BJ"), st.session_state.get("edhs_dhs_fetch_indicators", ""), int(st.session_state.get("dhs_yr_start_nav", 2000)), int(st.session_state.get("dhs_yr_end_nav", 2024)), key_prefix="dhs_nav")
         st.download_button("Export JSON", data=json.dumps(st.session_state["edhs_dhs_api_data"], indent=2).encode("utf-8"), file_name="dhs_export.json", mime="application/json", key="dhs_json_nav")
@@ -2192,18 +2392,18 @@ with st.expander("DHS Program API (legacy – use menu)", expanded=False):
     if st.button("Fetch Benin data (BJ)", key="dhs_fetch_benin", type="primary"):
         try:
             with st.spinner("Fetching Benin data from DHS Program API…"):
-                dhs_resp = api_dhs_data(
+                dhs_resp = api_dhs_data_fetch(
                     base_url,
                     tenant_id,
                     bearer_token or None,
-                    country_ids="BJ",
+                    country_ids="BEN",
                     indicator_ids="FE_FRTR_W_A15,CN_ANMC_C_ANY",
                     dhs_api_key=dhs_api_key or None,
                     survey_year_start=2000,
                     survey_year_end=2024,
                 )
             st.session_state["edhs_dhs_api_data"] = dhs_resp
-            st.session_state["edhs_dhs_fetch_countries"] = "BJ"
+            st.session_state["edhs_dhs_fetch_countries"] = "BEN"
             st.session_state["edhs_dhs_fetch_indicators"] = "FE_FRTR_W_A15,CN_ANMC_C_ANY"
             st.session_state.pop("edhs_dhs_indicators", None)  # Clear catalog so data table shows
             st.success(f"Loaded {len(dhs_resp.get('Data', []))} records for Benin.")
@@ -2262,7 +2462,7 @@ with st.expander("DHS Program API (legacy – use menu)", expanded=False):
         else:
             try:
                 with st.spinner("Fetching from DHS Program API…"):
-                    dhs_resp = api_dhs_data(
+                    dhs_resp = api_dhs_data_fetch(
                         base_url,
                         tenant_id,
                         bearer_token or None,

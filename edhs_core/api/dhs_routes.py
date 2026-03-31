@@ -16,6 +16,8 @@ from fastapi.responses import StreamingResponse
 
 from ..config import settings
 from ..dhs_api.client import DhsProgramApiClient
+from ..dhs_api.country_codes import countries_csv_to_dhs2
+from ..dhs_api.data_pipeline import process_dhs_data_response
 
 logger = logging.getLogger("edhs_core.dhs_api")
 
@@ -173,6 +175,63 @@ async def dhs_get_data(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=f"DHS Program API request failed: {e}",
         ) from e
+
+
+@router.get("/data/fetch")
+async def dhs_fetch_data_processed(
+    client: DhsProgramApiClient = Depends(_get_client),
+    country_ids: str = Query(
+        ...,
+        description="Comma-separated ISO3 or DHS alpha-2 codes (e.g. SEN,KEN or SN,KE)",
+    ),
+    indicator_ids: str = Query(..., description="Comma-separated DHS indicator IDs"),
+    survey_ids: Optional[str] = Query(None),
+    survey_year: Optional[int] = Query(None),
+    survey_year_start: Optional[int] = Query(None),
+    survey_year_end: Optional[int] = Query(None),
+    characteristic_ids: Optional[str] = Query(None),
+    breakdown: Optional[str] = Query(None),
+    return_geometry: Optional[bool] = Query(None),
+    page: Optional[int] = Query(None),
+    per_page: Optional[int] = Query(None, alias="perpage"),
+    post_filter_years: bool = Query(
+        True,
+        description="Filter and dedupe the Data array by survey year after the GET",
+    ),
+    dedupe: bool = Query(True, description="Deduplicate rows after year filter"),
+) -> Dict[str, Any]:
+    """
+    Single GET to DHS /data with ISO3→alpha-2 mapping, then optional year filter + dedupe on Data[].
+    """
+    dhs2 = countries_csv_to_dhs2(country_ids)
+    y0 = int(survey_year_start) if survey_year_start is not None else 1900
+    y1 = int(survey_year_end) if survey_year_end is not None else 2100
+    try:
+        result = client.get_data(
+            country_ids=dhs2,
+            indicator_ids=indicator_ids,
+            survey_ids=survey_ids,
+            survey_year=survey_year,
+            survey_year_start=survey_year_start,
+            survey_year_end=survey_year_end,
+            characteristic_ids=characteristic_ids,
+            breakdown=breakdown,
+            return_geometry=return_geometry,
+            page=page,
+            per_page=per_page,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("DHS API data fetch failed")
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"DHS Program API request failed: {e}",
+        ) from e
+
+    if post_filter_years:
+        result = process_dhs_data_response(result, y0, y1, dedupe=dedupe)
+    return result
 
 
 @router.get("/data/export/csv")
