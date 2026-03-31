@@ -88,6 +88,63 @@ def test_session_from_url_optional_metadata(client: TestClient, tenant_headers: 
     assert r.status_code in (400, 500)
 
 
+def test_catalog_session_compute_total_fertility(
+    client: TestClient, tenant_headers: dict
+) -> None:
+    """API catalog session: compute returns Value from Data[] (not microdata recomputation)."""
+    dhs_data = {
+        "Data": [
+            {
+                "IndicatorId": "FE_FRTR_W_TFR",
+                "SurveyYear": 2019,
+                "CountryName": "Ethiopia",
+                "Value": 4.2,
+            }
+        ]
+    }
+    r = client.post(
+        "/api/v1/sessions/from-dhs-api-catalog",
+        headers={**tenant_headers, "Content-Type": "application/json"},
+        json={
+            "dhs_data": dhs_data,
+            "survey_country_code": "ETH",
+            "survey_year": 2019,
+        },
+    )
+    assert r.status_code == 201
+    sid = r.json()["session_id"]
+    r2 = client.post(
+        "/api/v1/indicators/compute",
+        headers=tenant_headers,
+        json={"session_id": sid, "indicator_id": "total_fertility_rate"},
+    )
+    assert r2.status_code == 200
+    assert r2.json()["result"]["value"] == 4.2
+
+
+def test_catalog_session_spatial_returns_400(client: TestClient, tenant_headers: dict) -> None:
+    dhs_data = {"Data": [{"IndicatorId": "FE_FRTR_W_TFR", "SurveyYear": 2019, "Value": 4.0}]}
+    r = client.post(
+        "/api/v1/sessions/from-dhs-api-catalog",
+        headers={**tenant_headers, "Content-Type": "application/json"},
+        json={"dhs_data": dhs_data, "survey_country_code": "ETH"},
+    )
+    sid = r.json()["session_id"]
+    r2 = client.post(
+        "/api/v1/spatial/aggregate",
+        headers=tenant_headers,
+        json={
+            "session_id": sid,
+            "indicator_id": "total_fertility_rate",
+            "country_code": "ETH",
+            "admin_level": 1,
+            "microdata_admin_column": "admin1_code",
+            "boundary_admin_column": "admin_id",
+        },
+    )
+    assert r2.status_code == 400
+
+
 def test_compute_indicator(client: TestClient, tenant_headers: dict, session_id: str) -> None:
     """POST /api/v1/indicators/compute returns estimate and metadata."""
     r = client.post(

@@ -326,6 +326,47 @@ def _render_dhs_research_ui(
             st.caption(f"{iid}: No glossary entry (browse catalog for more).")
 
 
+def _micro_page_show_dhs_api_block(*, key_prefix: str) -> None:
+    """Surface DHS Program API payload on Microdata Analysis (same session state as DHS API page)."""
+    if not st.session_state.get("edhs_dhs_api_data"):
+        return
+    dhs_data = st.session_state["edhs_dhs_api_data"]
+    _countries = st.session_state.get("edhs_dhs_fetch_countries", "") or "—"
+    _indicators = st.session_state.get("edhs_dhs_fetch_indicators", "") or "—"
+    y0 = int(
+        st.session_state.get("dhs_yr_start_nav")
+        or st.session_state.get("dhs_year_start")
+        or 2000
+    )
+    y1 = int(
+        st.session_state.get("dhs_yr_end_nav")
+        or st.session_state.get("dhs_year_end")
+        or 2024
+    )
+    st.markdown("---")
+    st.subheader("DHS Program API data (this browser session)")
+    st.caption(
+        "Official **aggregated** indicators from the catalog. "
+        "**Compute** / disaggregate below use **survey microdata** only — add a session (sidebar). "
+        "Fetch more from the **DHS Program API** menu or the section at the bottom of this page."
+    )
+    _render_dhs_research_ui(
+        dhs_data,
+        str(_countries),
+        str(_indicators),
+        y0,
+        y1,
+        key_prefix=key_prefix,
+    )
+    st.download_button(
+        "Export API response (JSON)",
+        data=json.dumps(dhs_data, indent=2).encode("utf-8"),
+        file_name="dhs_program_export.json",
+        mime="application/json",
+        key=f"{key_prefix}_api_json_dl",
+    )
+
+
 # -----------------------------------------------------------------------------
 # Configuration and API client
 # -----------------------------------------------------------------------------
@@ -810,6 +851,78 @@ def api_spatial_aggregate(
     return r.json()
 
 
+def _infer_max_survey_year_from_dhs_data(dhs_data: Dict[str, Any]) -> Optional[int]:
+    rows = dhs_data.get("Data") or []
+    ys: List[int] = []
+    for r in rows:
+        try:
+            ys.append(int(float(r.get("SurveyYear"))))
+        except (TypeError, ValueError):
+            continue
+    return max(ys) if ys else None
+
+
+def api_create_dhs_catalog_session(
+    base_url: str,
+    tenant_id: str,
+    bearer_token: Optional[str],
+    dhs_data: Dict[str, Any],
+    *,
+    survey_country_code: Optional[str],
+    survey_year: Optional[int],
+    survey_type: Optional[str],
+) -> Dict[str, Any]:
+    """POST /sessions/from-dhs-api-catalog — Data[] becomes the table behind compute for this session."""
+    _require_edhs_backend_base_url(base_url)
+    r = requests.post(
+        f"{base_url}/sessions/from-dhs-api-catalog",
+        headers={**get_headers(tenant_id, bearer_token), "Content-Type": "application/json"},
+        json={
+            "dhs_data": dhs_data,
+            "survey_country_code": survey_country_code,
+            "survey_year": survey_year,
+            "survey_type": survey_type or "DHS",
+        },
+        timeout=90,
+    )
+    _raise_for_status_with_detail(r)
+    return r.json()
+
+
+def register_catalog_session_for_streamlit(
+    *,
+    base_url: str,
+    tenant_id: str,
+    bearer_token: Optional[str],
+    dhs_resp: Dict[str, Any],
+    countries_csv: str,
+    survey_type_hint: Optional[str] = None,
+) -> None:
+    try:
+        y = _infer_max_survey_year_from_dhs_data(dhs_resp)
+        iso = _first_iso_from_dhs_fetch_csv(countries_csv)
+        out = api_create_dhs_catalog_session(
+            base_url,
+            tenant_id,
+            bearer_token,
+            dhs_resp,
+            survey_country_code=iso,
+            survey_year=y,
+            survey_type=survey_type_hint,
+        )
+        st.session_state["edhs_api_catalog_session_id"] = out["session_id"]
+        if not st.session_state.get("edhs_session_id"):
+            st.session_state["edhs_session_source"] = "api_catalog"
+            if iso:
+                st.session_state["edhs_survey_country_code"] = iso
+            if y is not None:
+                st.session_state["edhs_survey_year"] = y
+            if survey_type_hint:
+                st.session_state["edhs_survey_type"] = survey_type_hint
+    except Exception:
+        pass
+
+
 # -----------------------------------------------------------------------------
 # Choropleth map (Folium)
 # -----------------------------------------------------------------------------
@@ -999,14 +1112,20 @@ def _hide_backend_connection_ui() -> bool:
 
 def _hide_choropleth_ui() -> bool:
     """
-    Hide map / spatial aggregation controls when admin boundary GeoPackages are not deployed.
+    Hide map / spatial aggregation controls when boundaries are usually absent (404 on /spatial/aggregate).
 
-    Set EDHS_HIDE_CHOROPLETH=true (e.g. on Render) to avoid 404s on /spatial/aggregate.
-    EDHS_SHOW_CHOROPLETH=true forces the controls visible (overrides hide).
+    - EDHS_SHOW_CHOROPLETH=true: always show (e.g. after mounting GeoPackages under ADMIN_BOUNDARIES_ROOT).
+    - EDHS_HIDE_CHOROPLETH=false: explicitly show when other rules would hide (optional).
+    - Otherwise: hide if EDHS_HIDE_CHOROPLETH=true, or if the backend URL is preconfigured
+      (same as hidden sidebar connection: API_BASE_URL / EDHS_HIDE_BACKEND_CONNECTION).
     """
     if os.environ.get("EDHS_SHOW_CHOROPLETH", "").strip().lower() in ("1", "true", "yes"):
         return False
-    return os.environ.get("EDHS_HIDE_CHOROPLETH", "").strip().lower() in ("1", "true", "yes")
+    if os.environ.get("EDHS_HIDE_CHOROPLETH", "").strip().lower() in ("0", "false", "no"):
+        return False
+    if os.environ.get("EDHS_HIDE_CHOROPLETH", "").strip().lower() in ("1", "true", "yes"):
+        return True
+    return _hide_backend_connection_ui()
 
 
 if _hide_backend_connection_ui():
@@ -1083,6 +1202,8 @@ st.sidebar.divider()
 st.sidebar.subheader("Dataset / session")
 
 session_id: Optional[str] = st.session_state.get("edhs_session_id")
+catalog_session_id: Optional[str] = st.session_state.get("edhs_api_catalog_session_id")
+compute_session_id: Optional[str] = session_id or catalog_session_id
 
 # Survey metadata (optional) for new sessions
 st.sidebar.caption("Survey metadata (optional)")
@@ -1112,7 +1233,20 @@ if st.sidebar.button(f"Fetch data for {country_code_dhs or 'country'} from DHS A
         st.session_state["edhs_dhs_api_data"] = dhs_resp
         st.session_state["edhs_dhs_fetch_countries"] = (sidebar_country or "ETH").strip().upper()
         st.session_state["edhs_dhs_fetch_indicators"] = "FE_FRTR_W_A15,CN_ANMC_C_ANY"
-        st.sidebar.success(f"Loaded {len(dhs_resp.get('Data', []))} records for {country_code_dhs}. See DHS Program API section below.")
+        st.session_state["dhs_yr_start_nav"] = 2000
+        st.session_state["dhs_yr_end_nav"] = 2024
+        register_catalog_session_for_streamlit(
+            base_url=base_url,
+            tenant_id=tenant_id,
+            bearer_token=bearer_token or None,
+            dhs_resp=dhs_resp,
+            countries_csv=st.session_state["edhs_dhs_fetch_countries"],
+            survey_type_hint=sidebar_type if sidebar_type != "Other" else None,
+        )
+        st.sidebar.success(
+            f"Loaded {len(dhs_resp.get('Data', []))} records for {country_code_dhs}. "
+            "Open **Microdata Analysis** to view the same data at the top of the page."
+        )
         st.rerun()
     except Exception as e:
         st.sidebar.error(str(e))
@@ -1284,7 +1418,7 @@ if uploaded_file is not None:
             st.rerun()
 
 if session_id:
-    st.sidebar.caption(f"Active session: `{session_id[:16]}…`")
+    st.sidebar.caption(f"Microdata session: `{session_id[:16]}…`")
     if st.sidebar.button("Clear session", type="secondary"):
         del st.session_state["edhs_session_id"]
         st.session_state.pop("edhs_session_source", None)
@@ -1297,9 +1431,14 @@ if session_id:
         st.session_state.pop("edhs_upload_error", None)
         # Keep session history for multi-country comparison
         st.rerun()
-else:
+if catalog_session_id and not session_id:
+    st.sidebar.caption(
+        f"DHS API catalog session (for **Compute**): `{catalog_session_id[:16]}…` — loads when you fetch API data."
+    )
+if not session_id and not catalog_session_id:
     st.sidebar.info(
-        "Create a session: **Try with sample data**, **Load from URL**, or upload a .dta/.sav file and click **Upload dataset**."
+        "Create a session: **Try with sample data**, **Load from URL**, upload a .dta/.sav file, "
+        "or **fetch DHS API data** (sidebar or **DHS Program API** page) to enable catalog-based **Compute**."
     )
 
 # Main area – header
@@ -1322,7 +1461,7 @@ if nav_choice == "🏠 Home":
     with col1:
         st.metric("Backend", "Connected" if st.session_state.get("edhs_connection_ok") else "Disconnected", "")
     with col2:
-        st.metric("Session", "Active" if session_id else "None", "")
+        st.metric("Session", "Active" if compute_session_id else "None", "")
     with col3:
         has_dhs = "Yes" if st.session_state.get("edhs_dhs_api_data") else "No"
         st.metric("DHS data loaded", has_dhs, "")
@@ -1445,6 +1584,14 @@ elif nav_choice == "📡 DHS Program API":
             st.session_state["edhs_dhs_fetch_countries"] = cc_auto
             st.session_state["edhs_dhs_fetch_indicators"] = ii_auto
             st.session_state.pop("edhs_dhs_indicators", None)
+            register_catalog_session_for_streamlit(
+                base_url=base_url,
+                tenant_id=tenant_id,
+                bearer_token=bearer_token or None,
+                dhs_resp=dhs_auto,
+                countries_csv=cc_auto,
+                survey_type_hint=None,
+            )
             st.success(f"Automatically loaded {len(dhs_auto.get('Data', []))} records.")
             st.rerun()
         except Exception as e:
@@ -1507,6 +1654,14 @@ elif nav_choice == "📡 DHS Program API":
                     st.session_state["edhs_dhs_fetch_countries"] = c_csv
                     st.session_state["edhs_dhs_fetch_indicators"] = id_csv
                     st.session_state.pop("edhs_dhs_indicators", None)
+                    register_catalog_session_for_streamlit(
+                        base_url=base_url,
+                        tenant_id=tenant_id,
+                        bearer_token=bearer_token or None,
+                        dhs_resp=dhs_resp,
+                        countries_csv=c_csv,
+                        survey_type_hint=st.session_state.get("sidebar_type"),
+                    )
                     st.success(f"Retrieved {len(dhs_resp.get('Data', []))} records.")
                     st.rerun()
                 except Exception as e:
@@ -1555,6 +1710,14 @@ elif nav_choice == "📡 DHS Program API":
                         st.session_state["edhs_dhs_fetch_countries"] = dhs_country_input.strip()
                         st.session_state["edhs_dhs_fetch_indicators"] = dhs_indicator_input.strip()
                         st.session_state.pop("edhs_dhs_indicators", None)
+                        register_catalog_session_for_streamlit(
+                            base_url=base_url,
+                            tenant_id=tenant_id,
+                            bearer_token=bearer_token or None,
+                            dhs_resp=dhs_resp,
+                            countries_csv=dhs_country_input.strip(),
+                            survey_type_hint=st.session_state.get("sidebar_type"),
+                        )
                         st.success(f"Retrieved {len(dhs_resp.get('Data', []))} records.")
                         st.rerun()
                     except Exception as e:
@@ -1889,8 +2052,16 @@ elif nav_choice == "⚙️ Settings":
     st.stop()
 
 elif nav_choice == "📂 Microdata Analysis":
+    if catalog_session_id and not session_id:
+        st.success(
+            "**DHS API catalog session** — **Compute** uses values from your last **DHS Program API** fetch "
+            "(aggregated catalog rows). Load a **.dta / .sav** in the sidebar for row-level microdata instead."
+        )
     if not st.session_state.get("edhs_session_id"):
-        st.info("👈 **Open the sidebar** to create a session: **Try with sample data**, **Load from URL**, or upload a .dta/.sav file.")
+        st.info(
+            "👈 **Microdata session (survey file, optional):** sidebar — **Try with sample data**, **Load from URL**, or upload a .dta/.sav file. "
+            "If you only need official published numbers, **fetch API data** (sidebar or **DHS Program API** page) — **Compute** will use those automatically."
+        )
         if st.session_state.get("edhs_upload_error"):
             st.error("**Upload error:** " + st.session_state["edhs_upload_error"])
             st.caption(
@@ -1918,8 +2089,9 @@ elif nav_choice == "📂 Microdata Analysis":
                     st.error(str(e))
         st.markdown("---")
 
-if nav_choice == "📂 Microdata Analysis" and not session_id:
+if nav_choice == "📂 Microdata Analysis" and not compute_session_id:
     st.markdown("---")
+    _micro_page_show_dhs_api_block(key_prefix="dhs_micro_nosession")
     # If a file is already selected in the sidebar, offer to send it from the main area
     upload_name = st.session_state.get("edhs_upload_file_name")
     upload_bytes = st.session_state.get("edhs_upload_file_bytes")
@@ -1973,10 +2145,11 @@ if nav_choice == "📂 Microdata Analysis" and not session_id:
     st.markdown(
         "**First:** start the backend (e.g. `uvicorn edhs_core.main:app --reload`) and set **Backend base URL** in the sidebar to your API root (e.g. `http://127.0.0.1:8000/api/v1`)."
     )
+    _map_opt = " or **Compute & show map**" if not _hide_choropleth_ui() else ""
     st.markdown(
         "1. **Check the connection** (sidebar on the left) — the API URL must be correct.  \n"
         "2. **Create a session** — in the sidebar: **Try with sample data**, **Load from URL** (direct .dta/.sav/.zip link), or upload a .dta/.sav file then **Upload dataset**.  \n"
-        "3. **Pick an indicator** then run **Compute** or **Compute & show map**."
+        f"3. **Pick an indicator** then run **Compute**{_map_opt}."
     )
     st.markdown("---")
     col1, col2, col3 = st.columns([1, 2, 1])
@@ -2007,7 +2180,9 @@ if nav_choice == "📂 Microdata Analysis" and not session_id:
             except Exception as e:
                 st.error(f"Could not create session: {e}")
 
-    st.caption("For DHS Program API data (no session required), use the **DHS Program API** menu.")
+    st.caption(
+        "Fetched API data also appears **above** when you load it from the **DHS Program API** menu (or sidebar fetch)."
+    )
     if st.button("Go to DHS Program API", key="go_dhs_nav"):
         st.session_state["edhs_nav_pending"] = "📡 DHS Program API"
         st.rerun()
@@ -2029,6 +2204,7 @@ if "edhs_indicators" not in st.session_state:
             st.rerun()
         if st.button("Clear session and start over", key="clear_after_indicator_fail"):
             st.session_state.pop("edhs_session_id", None)
+            st.session_state.pop("edhs_api_catalog_session_id", None)
             st.session_state.pop("edhs_indicators", None)
             st.session_state.pop("edhs_survey_country_code", None)
             st.session_state.pop("edhs_survey_year", None)
@@ -2056,6 +2232,8 @@ elif session_source == "sample":
     source_label = " (sample data)"
 elif session_source == "upload":
     source_label = " (uploaded file)"
+elif session_source == "api_catalog" or (not session_id and catalog_session_id):
+    source_label = " (DHS API catalog)"
 if survey_country or survey_year or survey_type:
     parts = []
     if survey_country:
@@ -2066,12 +2244,14 @@ if survey_country or survey_year or survey_type:
     if survey_year:
         parts.append(str(survey_year))
     label = " ".join(parts) + source_label
+    _map_opt_active = " or **Compute & show map**" if not _hide_choropleth_ui() else ""
     st.success(
-        f"**Active session: {label}** — 1) Choose an indicator, 2) optionally adjust advanced options, 3) run **Compute** or **Compute & show map**."
+        f"**Active session: {label}** — 1) Choose an indicator, 2) optionally adjust advanced options, 3) run **Compute**{_map_opt_active}."
     )
 else:
+    _map_opt_active = " or **Compute & show map**" if not _hide_choropleth_ui() else ""
     st.success(
-        f"**Active session**{source_label} — 1) Choose an indicator, 2) optionally adjust advanced options, 3) run **Compute** or **Compute & show map**."
+        f"**Active session**{source_label} — 1) Choose an indicator, 2) optionally adjust advanced options, 3) run **Compute**{_map_opt_active}."
     )
 
 fetch_countries_meta = st.session_state.get("edhs_dhs_fetch_countries")
@@ -2085,6 +2265,8 @@ if fetch_countries_meta and survey_country:
             "only when both describe the **same survey / country**."
         )
 
+_micro_page_show_dhs_api_block(key_prefix="dhs_micro_withsession")
+
 st.markdown("### 2. Choose the indicator and geographic level")
 st.caption(
     "**Country** and **indicator** defaults follow your microdata session when present; otherwise they "
@@ -2096,6 +2278,7 @@ ind_options = {f"{i['id']} – {i['name']}": i["id"] for i in indicators}
 _labels = list(ind_options.keys())
 _micro_sync_sig = (
     st.session_state.get("edhs_session_id"),
+    st.session_state.get("edhs_api_catalog_session_id"),
     st.session_state.get("edhs_dhs_fetch_countries"),
     st.session_state.get("edhs_dhs_fetch_indicators"),
     st.session_state.get("edhs_survey_country_code"),
@@ -2167,7 +2350,7 @@ if group_by_column and st.button("Compute disaggregated"):
             base_url,
             tenant_id,
             bearer_token or None,
-            session_id,
+            compute_session_id,
             indicator_id,
             group_by_column,
             use_weights,
@@ -2209,7 +2392,7 @@ with cols_btn[0]:
                 base_url,
                 tenant_id,
                 bearer_token or None,
-                session_id,
+                compute_session_id,
                 indicator_id,
                 use_weights,
                 weight_var,
@@ -2239,7 +2422,7 @@ with cols_btn[1]:
                     base_url,
                     tenant_id,
                     bearer_token or None,
-                    session_id,
+                    compute_session_id,
                     ind_id,
                     use_weights,
                     weight_var,
@@ -2272,7 +2455,7 @@ if not _choropleth_hidden:
                     base_url,
                     tenant_id,
                     bearer_token or None,
-                    session_id,
+                    compute_session_id,
                     indicator_id,
                     country_code,
                     admin_level,
@@ -2527,13 +2710,16 @@ if not _choropleth_hidden and st.session_state.get("edhs_last_geojson"):
         )
 
 st.divider()
-st.caption("For DHS Program API data (indicators, visualizations, export), use the **DHS Program API** menu in the sidebar.")
+st.caption(
+    "Need another slice? Use **DHS Program API** in the sidebar, sidebar **Fetch data from DHS API**, "
+    "or expand **Fetch more / browse DHS Program API catalog** below."
+)
 if st.button("📡 Go to DHS Program API", key="go_dhs_from_micro"):
     st.session_state["edhs_nav_pending"] = "📡 DHS Program API"
     st.rerun()
 
-# Legacy DHS section kept collapsed for users who had it open – redirect to nav
-with st.expander("DHS Program API (legacy – use menu)", expanded=False):
+# Extra fetch + catalog (tables/charts for loaded data appear in **DHS Program API data** above)
+with st.expander("Fetch more / browse DHS Program API catalog", expanded=False):
     if st.button("Fetch Benin data (BJ)", key="dhs_fetch_benin", type="primary"):
         try:
             with st.spinner("Fetching Benin data from DHS Program API…"):
@@ -2550,7 +2736,17 @@ with st.expander("DHS Program API (legacy – use menu)", expanded=False):
             st.session_state["edhs_dhs_api_data"] = dhs_resp
             st.session_state["edhs_dhs_fetch_countries"] = "BEN"
             st.session_state["edhs_dhs_fetch_indicators"] = "FE_FRTR_W_A15,CN_ANMC_C_ANY"
+            st.session_state["dhs_yr_start_nav"] = 2000
+            st.session_state["dhs_yr_end_nav"] = 2024
             st.session_state.pop("edhs_dhs_indicators", None)  # Clear catalog so data table shows
+            register_catalog_session_for_streamlit(
+                base_url=base_url,
+                tenant_id=tenant_id,
+                bearer_token=bearer_token or None,
+                dhs_resp=dhs_resp,
+                countries_csv="BEN",
+                survey_type_hint=st.session_state.get("sidebar_type"),
+            )
             st.success(f"Loaded {len(dhs_resp.get('Data', []))} records for Benin.")
             st.rerun()
         except Exception as e:
@@ -2620,7 +2816,17 @@ with st.expander("DHS Program API (legacy – use menu)", expanded=False):
                 st.session_state["edhs_dhs_api_data"] = dhs_resp
                 st.session_state["edhs_dhs_fetch_countries"] = dhs_country_input.strip()
                 st.session_state["edhs_dhs_fetch_indicators"] = dhs_indicator_input.strip()
+                st.session_state["dhs_yr_start_nav"] = int(dhs_year_start)
+                st.session_state["dhs_yr_end_nav"] = int(dhs_year_end)
                 st.session_state.pop("edhs_dhs_indicators", None)  # Clear catalog so data table shows
+                register_catalog_session_for_streamlit(
+                    base_url=base_url,
+                    tenant_id=tenant_id,
+                    bearer_token=bearer_token or None,
+                    dhs_resp=dhs_resp,
+                    countries_csv=dhs_country_input.strip(),
+                    survey_type_hint=st.session_state.get("sidebar_type"),
+                )
                 st.success(f"Retrieved {len(dhs_resp.get('Data', []))} records.")
                 st.rerun()
             except requests.HTTPError as e:
@@ -2636,20 +2842,10 @@ with st.expander("DHS Program API (legacy – use menu)", expanded=False):
                 st.error(str(e))
 
     if st.session_state.get("edhs_dhs_api_data"):
-        dhs_data = st.session_state["edhs_dhs_api_data"]
-        _countries = st.session_state.get("edhs_dhs_fetch_countries", dhs_country_input.strip())
-        _indicators = st.session_state.get("edhs_dhs_fetch_indicators", dhs_indicator_input.strip())
-        _render_dhs_research_ui(
-            dhs_data, _countries, _indicators,
-            int(dhs_year_start), int(dhs_year_end),
-            key_prefix="dhs_ws",
-        )
-        st.download_button(
-            label="Export JSON",
-            data=json.dumps(dhs_data, indent=2).encode("utf-8"),
-            file_name="dhs_program_export.json",
-            mime="application/json",
-            key="dhs_export_json",
+        _dc = st.session_state["edhs_dhs_api_data"].get("Data") or []
+        st.info(
+            f"**{len(_dc)}** API rows loaded — table, charts, and exports are in **DHS Program API data** "
+            "at the top of this page (scroll up)."
         )
 
     with st.expander("Browse indicators catalog (to find IndicatorIds)", expanded=False):

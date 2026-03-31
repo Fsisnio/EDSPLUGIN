@@ -4,7 +4,7 @@ import uuid
 import zipfile
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 import pandas as pd
 import pyreadstat
@@ -39,6 +39,8 @@ class SessionData:
     survey_country_code: Optional[str] = None
     survey_year: Optional[int] = None
     survey_type: Optional[str] = None
+    #: ``microdata`` = survey rows; ``api_catalog`` = DHS Program API ``Data[]`` table
+    session_kind: str = "microdata"
 
 
 class SessionManager:
@@ -183,6 +185,7 @@ class SessionManager:
         survey_country_code: Optional[str] = None,
         survey_year: Optional[int] = None,
         survey_type: Optional[str] = None,
+        session_kind: str = "microdata",
     ) -> str:
         """Store a session from an already-parsed DataFrame; return session_id."""
         session_id = str(uuid.uuid4())
@@ -198,8 +201,36 @@ class SessionManager:
             survey_country_code=survey_country_code,
             survey_year=survey_year,
             survey_type=survey_type,
+            session_kind=session_kind,
         )
         return session_id
+
+    async def create_session_from_dhs_api_catalog(
+        self,
+        tenant_id: str,
+        dhs_data: Dict[str, Any],
+        *,
+        survey_country_code: Optional[str] = None,
+        survey_year: Optional[int] = None,
+        survey_type: Optional[str] = None,
+    ) -> str:
+        """Build a session DataFrame from DHS Program API JSON ``Data`` array (aggregates)."""
+        rows = dhs_data.get("Data") or []
+        if not rows:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="dhs_data has no Data rows.",
+            )
+        df = pd.DataFrame(rows)
+        return self._create_session_from_dataframe(
+            tenant_id=tenant_id,
+            df=df,
+            filename="dhs_program_api_catalog.json",
+            survey_country_code=survey_country_code,
+            survey_year=survey_year,
+            survey_type=survey_type or "DHS",
+            session_kind="api_catalog",
+        )
 
     async def create_session_from_url(
         self,

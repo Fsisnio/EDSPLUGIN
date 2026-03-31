@@ -46,6 +46,19 @@ class DatasetUploadResponse(BaseModel):
     )
 
 
+class DhsApiCatalogSessionRequest(BaseModel):
+    """
+    Create a processing session whose rows are DHS Program API ``/data`` ``Data[]`` entries.
+
+    The same indicator compute endpoints can then return catalog values (not microdata recomputation).
+    """
+
+    dhs_data: Dict[str, Any] = Field(..., description="Full or partial DHS /data JSON (must include Data array).")
+    survey_country_code: Optional[str] = None
+    survey_year: Optional[int] = None
+    survey_type: Optional[str] = None
+
+
 class SessionFromUrlRequest(BaseModel):
     """
     Request to create a session by downloading a dataset from an external URL.
@@ -82,6 +95,10 @@ class SessionInfoResponse(BaseModel):
     survey_country_code: Optional[str] = Field(None, description="Survey country code.")
     survey_year: Optional[int] = Field(None, description="Survey year.")
     survey_type: Optional[str] = Field(None, description="Survey type (DHS, MIS, AIS).")
+    session_kind: Optional[str] = Field(
+        None,
+        description="microdata or api_catalog.",
+    )
 
 
 class IndicatorComputeRequest(BaseModel):

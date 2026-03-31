@@ -7,6 +7,10 @@ import pyreadstat
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 
 from ..indicators import BaseIndicator
+from ..indicators.dhs_api_catalog import (
+    compute_grouped_from_api_catalog,
+    compute_indicator_from_api_catalog,
+)
 from ..indicators.registry import get_indicator_class
 from ..security.dependencies import get_current_tenant, require_active_subscription
 from ..spatial.aggregation import (
@@ -17,6 +21,7 @@ from ..spatial.aggregation import (
 from ..utils.sessions import SessionManager, get_session_manager
 from .schemas import (
     DatasetUploadResponse,
+    DhsApiCatalogSessionRequest,
     HealthCheckResponse,
     IndicatorComputeGroupedRequest,
     IndicatorComputeGroupedResponse,
@@ -47,6 +52,7 @@ async def api_root() -> dict:
         "indicators": "/api/v1/indicators",
         "sessions_upload": "POST /api/v1/sessions/upload",
         "sessions_from_url": "POST /api/v1/sessions/from-url",
+        "sessions_from_dhs_api_catalog": "POST /api/v1/sessions/from-dhs-api-catalog",
         "indicators_compute": "POST /api/v1/indicators/compute",
         "indicators_compute_grouped": "POST /api/v1/indicators/compute-grouped",
         "spatial_aggregate": "POST /api/v1/spatial/aggregate",
@@ -168,6 +174,41 @@ async def create_session_from_url(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to create session from URL. The URL may be invalid or the file unsupported.",
         ) from e
+
+
+@api_router.post(
+    "/sessions/from-dhs-api-catalog",
+    response_model=DatasetUploadResponse,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_active_subscription)],
+)
+async def create_session_from_dhs_api_catalog(
+    payload: DhsApiCatalogSessionRequest,
+    tenant_id: str = Depends(get_current_tenant),
+    session_manager: SessionManager = Depends(get_session_manager),
+) -> DatasetUploadResponse:
+    """
+    Create a session whose table is the DHS Program API ``Data`` array (aggregated statistics).
+
+    Use the same ``/indicators/compute`` endpoint; values are read from catalog rows when
+    ``session_kind`` is ``api_catalog``, not recomputed from survey microdata.
+    """
+    session_id = await session_manager.create_session_from_dhs_api_catalog(
+        tenant_id=tenant_id,
+        dhs_data=payload.dhs_data,
+        survey_country_code=payload.survey_country_code,
+        survey_year=payload.survey_year,
+        survey_type=payload.survey_type,
+    )
+    session = session_manager.get_session(tenant_id=tenant_id, session_id=session_id)
+    return DatasetUploadResponse(
+        session_id=session_id,
+        tenant_id=tenant_id,
+        filename=session.filename or "dhs_program_api_catalog.json",
+        survey_country_code=session.survey_country_code,
+        survey_year=session.survey_year,
+        survey_type=session.survey_type,
+    )
 
 
 @api_router.post(
@@ -298,6 +339,7 @@ async def get_session_info(
         survey_country_code=session.survey_country_code,
         survey_year=session.survey_year,
         survey_type=session.survey_type,
+        session_kind=getattr(session, "session_kind", "microdata"),
     )
 
 
@@ -354,6 +396,13 @@ async def compute_indicator(
 
     session = session_manager.get_session(tenant_id=tenant_id, session_id=payload.session_id)
 
+    if getattr(session, "session_kind", "microdata") == "api_catalog":
+        try:
+            result = compute_indicator_from_api_catalog(session, payload.indicator_id)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
+        return IndicatorComputeResponse(result=result)
+
     indicator_cls = get_indicator_class(payload.indicator_id)
     indicator: BaseIndicator = indicator_cls(
         use_weights=payload.use_weights,
@@ -385,16 +434,27 @@ async def compute_indicator_grouped(
     from .schemas import IndicatorGroupRow
 
     session = session_manager.get_session(tenant_id=tenant_id, session_id=payload.session_id)
-    indicator_cls = get_indicator_class(payload.indicator_id)
-    indicator: BaseIndicator = indicator_cls(
-        use_weights=payload.use_weights,
-        weight_var=payload.weight_var,
-        **payload.extra_params,
-    )
-    try:
-        df = indicator.compute_grouped(session.df, group_by=payload.group_by_column)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
+
+    if getattr(session, "session_kind", "microdata") == "api_catalog":
+        try:
+            df = compute_grouped_from_api_catalog(
+                session,
+                payload.indicator_id,
+                payload.group_by_column,
+            )
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
+    else:
+        indicator_cls = get_indicator_class(payload.indicator_id)
+        indicator: BaseIndicator = indicator_cls(
+            use_weights=payload.use_weights,
+            weight_var=payload.weight_var,
+            **payload.extra_params,
+        )
+        try:
+            df = indicator.compute_grouped(session.df, group_by=payload.group_by_column)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
     group_col = payload.group_by_column
     rows = []
     for _, r in df.iterrows():
@@ -445,6 +505,13 @@ async def spatial_aggregate_indicator(
         session = session_manager.get_session(tenant_id=tenant_id, session_id=payload.session_id)
     except Exception as e:
         raise HTTPException(status_code=404, detail="Session not found or expired.") from e
+
+    if getattr(session, "session_kind", "microdata") == "api_catalog":
+        raise HTTPException(
+            status_code=400,
+            detail="Choropleth / spatial aggregation requires survey microdata with admin codes, "
+            "not DHS Program API catalog rows.",
+        )
 
     try:
         indicator_cls = get_indicator_class(payload.indicator_id)
