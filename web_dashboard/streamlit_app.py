@@ -382,12 +382,32 @@ def _to_dhs_country_code(raw: str) -> str:
 
 
 _DHS_ISO3_MULTI_OPTIONS: List[str] = sorted(_ISO3_TO_DHS.keys())
-_DHS_QUICK_INDICATOR_PRESETS: List[Tuple[str, str]] = [
-    ("Total fertility rate (TFR)", "FE_FRTR_W_TFR"),
-    ("Infant mortality rate", "CM_ECMR_C_IMR"),
-    ("Under-five mortality", "CM_ECMR_C_U5M"),
-    ("Modern contraception (women)", "FP_CUSE_W_MOD"),
-]
+
+try:
+    from dhs_indicator_catalog import (
+        INDICATOR_CATALOG_BY_CATEGORY,
+        default_indicator_ids,
+        format_option,
+        slug_category,
+    )
+except ImportError:
+    INDICATOR_CATALOG_BY_CATEGORY = {
+        "Quick picks": [
+            ("FE_FRTR_W_TFR", "Total fertility rate (TFR)"),
+            ("CM_ECMR_C_IMR", "Infant mortality rate"),
+            ("CM_ECMR_C_U5M", "Under-five mortality"),
+            ("FP_CUSE_W_MOD", "Modern contraception (women)"),
+        ]
+    }
+
+    def default_indicator_ids() -> List[str]:
+        return ["FE_FRTR_W_TFR", "CM_ECMR_C_IMR"]
+
+    def format_option(indicator_id: str, label: str) -> str:
+        return f"{label} (`{indicator_id}`)"
+
+    def slug_category(category: str) -> str:
+        return category.replace(" ", "_")[:48]
 
 
 def get_headers(
@@ -1737,16 +1757,28 @@ elif nav_choice == "📡 DHS Program API":
             key="dhs_nav_iso3_multi",
             help="Mapped to DHS two-letter codes before the API call.",
         )
-        preset_labels = [p[0] for p in _DHS_QUICK_INDICATOR_PRESETS]
-        preset_ids = [p[1] for p in _DHS_QUICK_INDICATOR_PRESETS]
-        default_lbl = preset_labels[:2] if len(preset_labels) > 1 else preset_labels[:1]
-        sel_lbl = st.multiselect(
-            "Indicators",
-            options=preset_labels,
-            default=default_lbl,
-            key="dhs_nav_ind_presets",
-            help="Official DHS IndicatorId values (not every indicator is available for every country-year).",
+        st.caption(
+            "Choose indicators **by category** below. Selections are combined when you click **Fetch DHS data**. "
+            "Not every indicator is available for every country or survey year."
         )
+        picked_indicator_ids: List[str] = []
+        _defaults = set(default_indicator_ids())
+        for _cat, _items in INDICATOR_CATALOG_BY_CATEGORY.items():
+            _opts = [format_option(iid, lbl) for iid, lbl in _items]
+            _id_map = {format_option(iid, lbl): iid for iid, lbl in _items}
+            _default_opts = [format_option(iid, lbl) for iid, lbl in _items if iid in _defaults]
+            with st.expander(_cat, expanded=_cat == next(iter(INDICATOR_CATALOG_BY_CATEGORY.keys()))):
+                _sel = st.multiselect(
+                    "Select indicators",
+                    options=_opts,
+                    default=_default_opts,
+                    key=f"dhs_nav_cat_{slug_category(_cat)}",
+                    help="Official DHS IndicatorId in parentheses.",
+                    label_visibility="collapsed",
+                )
+                for _o in _sel:
+                    picked_indicator_ids.append(_id_map[_o])
+        picked_indicator_ids = list(dict.fromkeys(picked_indicator_ids))
         dhs_breakdown = st.text_input(
             "Breakdown (optional)",
             value="",
@@ -1763,10 +1795,10 @@ elif nav_choice == "📡 DHS Program API":
                 "Survey year to", min_value=1990, max_value=2030, value=2024, key="dhs_yr_end_nav"
             )
         if st.button("Fetch DHS data", key="dhs_fetch_nav", type="primary"):
-            if not sel_iso or not sel_lbl:
-                st.error("Select at least one country and one indicator.")
+            if not sel_iso or not picked_indicator_ids:
+                st.error("Select at least one country and one indicator (in any category above).")
             else:
-                id_csv = ",".join(preset_ids[preset_labels.index(lab)] for lab in sel_lbl)
+                id_csv = ",".join(picked_indicator_ids)
                 c_csv = ",".join(sel_iso)
                 try:
                     with st.spinner("Fetching…"):
