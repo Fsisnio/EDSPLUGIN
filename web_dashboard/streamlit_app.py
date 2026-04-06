@@ -1554,7 +1554,7 @@ if nav_choice == "🏠 Home":
     st.markdown("**Need data?** Use the sidebar to fetch from the DHS Program API, try sample data, or upload a .dta/.sav file.")
     st.caption(
         "New to the platform? Use **Onboarding** in the sidebar for a step-by-step guide. "
-        "Questions about setup and deployment? See **❓ FAQ** in the sidebar."
+        "Questions about navigating the app and how it works? See **❓ FAQ** in the sidebar."
     )
     st.stop()
 
@@ -1625,79 +1625,69 @@ elif nav_choice == "📖 Onboarding":
 elif nav_choice == "❓ FAQ":
     st.markdown("## ❓ Frequently asked questions")
     st.caption(
-        "Quick answers about this platform, the API, and DHS data. "
-        "For methodology, always follow [The DHS Program](https://www.dhsprogram.com/) guidance and survey documentation."
+        "How to move around the platform and what each area is for. "
+        "For survey methodology, follow [The DHS Program](https://www.dhsprogram.com/) and official survey documentation."
     )
     st.markdown("---")
 
-    with st.expander("What is this platform?", expanded=True):
+    with st.expander("How do I navigate the platform?", expanded=True):
         st.markdown(
-            "The **DHS Hybrid Plugin Platform** is a web app with a **FastAPI backend** and a **Streamlit** dashboard. "
-            "You can browse **aggregated indicators** from the DHS Program API (STATcompiler-style), optionally work with "
-            "**survey microdata** when you have the right files and permissions, visualize results, and export for research."
+            "Use the **Navigate** list in the **left sidebar** to switch pages:\n\n"
+            "- **🏠 Home** — Status at a glance (connection, session, whether DHS data is loaded) and shortcuts to main areas.\n"
+            "- **📖 Onboarding** — Short guided tour and quick start.\n"
+            "- **📡 DHS Program API** — Choose countries, years, and indicators (including grouped picks in **Fetch data (quick)**), "
+            "then fetch, visualize, and export aggregated indicator data.\n"
+            "- **📋 DHS Indicators** — Reference table of common **Indicator IDs** and descriptions; use those IDs when fetching in **DHS Program API**.\n"
+            "- **📂 Microdata Analysis** — Upload or load survey files (e.g. `.dta` / `.sav`), compute indicators with weights, disaggregate, export.\n"
+            "- **📊 Custom Dashboard** — Add charts and tables from data you already loaded (DHS API or microdata results).\n"
+            "- **❓ FAQ** — This page.\n"
+            "- **⚙️ Settings** — Appears only when your deployment shows it; connection and related options live there and in the sidebar.\n\n"
+            "The sidebar also has **backend connection** (when visible), **session** tools, and shortcuts to load sample data or DHS fetches—use these as you move between pages."
         )
 
-    with st.expander("What should I put in “Backend base URL” (if shown)?"):
+    with st.expander("What is this platform and how does it work?"):
         st.markdown(
-            "Use the **root URL of this app’s own API** — the address where **your** EDHS/FastAPI service is running — "
-            "typically ending in **`/api/v1`** (for example `http://127.0.0.1:8000/api/v1` when developing locally).\n\n"
-            "**Do not** paste a `https://api.dhsprogram.com/...` link there. The public DHS API is reached **through** your backend "
-            "(proxy routes under `/dhs-api/...`), not as the dashboard’s “base URL.”\n\n"
-            "On many hosted deployments the sidebar is **preconfigured** via **`API_BASE_URL`**; you may not see this field."
+            "The **DHS Hybrid Plugin Platform** is a **web application** for exploring **Demographic and Health Survey (DHS)** content:\n\n"
+            "- **Aggregated indicators** — You request published indicators (by country, year, and indicator ID). The app talks to **your** "
+            "site’s backend, which connects to the [DHS Program API](https://api.dhsprogram.com/) on your behalf.\n"
+            "- **Microdata** — When you have permitted files, you can run weighted analysis and breakdowns in a **session** and send results to charts, exports, or the **Custom Dashboard**.\n\n"
+            "You do **not** need to use microdata to use the DHS Program API section; many workflows start there and stay with aggregated data only."
         )
 
-    with st.expander("Why does production use `http://127.0.0.1:8000/api/v1`?"):
+    with st.expander("DHS Program API vs Microdata Analysis — what should I use?"):
         st.markdown(
-            "When the **API and Streamlit run in the same container** (see `Dockerfile.webservice` / `run_webservice.sh`), "
-            "the dashboard talks to the API on **loopback** inside that container. End users still open the site with your "
-            "normal **https** URL; they never browse to `127.0.0.1` in the browser.\n\n"
-            "If the API runs as a **separate** service, set **`API_BASE_URL`** to that service’s public API base (with `/api/v1`), not localhost."
+            "**DHS Program API** — Ready-made **national/subnational aggregates** from the API. Pick countries, indicators, and years; no survey file upload.\n\n"
+            "**Microdata Analysis** — **Household or individual records** from files you are allowed to use. Supports custom indicators, weights, "
+            "and disaggregation (e.g. region, wealth). Respect your **data-use agreement**.\n\n"
+            "**Custom Dashboard** — After you have loaded DHS API data or microdata results, you can pin visualizations here for one place to review them."
         )
 
-    with st.expander("Where does my DHS Program API key go?"):
+    with st.expander("Connection, backend URL, and “Disconnected”"):
         st.markdown(
-            "The host can set **`DHS_PROGRAM_API_KEY`** on the server. You may optionally override with **DHS API key** in the "
-            "sidebar when that field is visible, or via the **`X-DHS-API-Key`** header for API clients. "
-            "Get a key from [The DHS Program API](https://api.dhsprogram.com/)."
+            "- If you see **Backend base URL** and **Check connection**, the URL should be the **API base for this platform** "
+            "(often ending in `/api/v1`), not a raw `api.dhsprogram.com` link. Hosted sites usually **pre-fill** this for you.\n"
+            "- Click **Check connection** if charts or fetches fail; refresh the page and try again if it was temporary.\n"
+            "- If **Settings** is hidden, your host chose a simplified menu—the same connection controls may only appear in the **sidebar**.\n"
+            "- If problems persist, contact whoever **runs or supports** this site for your organization."
         )
 
-    with st.expander("“Backend not reached” or connection refused — what should I check?"):
+    with st.expander("Maps and choropleth"):
         st.markdown(
-            "1. **Same-container deploy:** Ensure **Docker Command** in Render is **empty** so the image runs **`run_webservice.sh`** "
-            "(Uvicorn on port **8000** + Streamlit on **`PORT`**).\n"
-            "2. **Logs:** Confirm **Uvicorn** starts before traffic hits the UI.\n"
-            "3. **Timeout:** First health check can be slow; optional **`EDHS_HEALTHCHECK_TIMEOUT`** can be increased.\n"
-            "4. **Split services:** If Streamlit and API are on different hosts, **`API_BASE_URL`** must point to the real API URL, not `127.0.0.1`."
-        )
-
-    with st.expander("DHS Program API vs microdata — what’s the difference?"):
-        st.markdown(
-            "**DHS Program API** — Published aggregated indicators (countries, years, indicator IDs). No survey file upload required.\n\n"
-            "**Microdata** — Row-level analysis using `.dta` / `.sav` (or similar) in a **session**; supports weighted estimates, "
-            "disaggregation, and maps when boundaries are available. Follow your data-use agreement."
-        )
-
-    with st.expander("Why is Settings missing from the menu?"):
-        st.markdown(
-            "On deployments where the host sets **`API_BASE_URL`** (or related flags), **Settings** may be hidden "
-            "to simplify the experience. Administrators can set **`EDHS_SHOW_SETTINGS_NAV=true`** to show it again."
-        )
-
-    with st.expander("What about maps (choropleth)?"):
-        st.markdown(
-            "Choropleth needs **admin boundary** data on the server under **`ADMIN_BOUNDARIES_ROOT`**. "
-            "If boundaries are missing, map actions may return 404 — the UI may hide map controls when not deployed. "
-            "Use **`EDHS_SHOW_CHOROPLETH=true`** to force map controls when you have added boundary files."
+            "Map features depend on **boundary data** and options your host enabled. If map buttons are missing or a map fails to load, "
+            "you can still use tables, charts, and exports elsewhere. Ask your administrator if maps are expected for your deployment."
         )
 
     with st.expander("How do I cite DHS data?"):
         st.markdown(
-            "Use the **citation** or **methodology** notes shown in each section where available, and follow "
-            "[The DHS Program](https://www.dhsprogram.com/) guidance for official publications."
+            "Use **citation** or **methodology** notes shown in each section when available, and follow "
+            "[The DHS Program](https://www.dhsprogram.com/) guidance for publications."
         )
 
     st.markdown("---")
-    st.markdown("**Still stuck?** Check deployment logs, confirm your Dockerfile and environment variables, and ensure the API process is healthy.")
+    st.markdown(
+        "**Need a walkthrough?** Open **📖 Onboarding** in the sidebar. "
+        "**Still stuck?** Contact your organization’s administrator for access or site issues."
+    )
     st.stop()
 
 elif nav_choice == "📡 DHS Program API":
