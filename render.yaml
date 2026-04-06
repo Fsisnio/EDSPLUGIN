@@ -33,5 +33,7 @@ services:
       # Choropleth auto-hides when API_BASE_URL is set; optional explicit override:
       # EDHS_HIDE_CHOROPLETH / EDHS_SHOW_CHOROPLETH
       # Remove EDHS_SHOW_BACKEND_CONNECTION if present — "true" keeps the sidebar form visible.
+      # Optional: EDHS_SHOW_SETTINGS_NAV=true to show ⚙️ Settings in the sidebar (hidden when API_BASE_URL is set).
+      # Optional: EDHS_SHOW_MICRODATA_DISAGGREGATION=true to show grouped/disaggregate controls when API is preconfigured.
       # Optional: EDHS_HEALTHCHECK_TIMEOUT=15 (seconds) if first-load health check is slow after deploy.
       # Optional: DHS_AUTO_FETCH=true  DHS_AUTO_COUNTRIES=SEN,KEN  DHS_AUTO_INDICATORS=FE_FRTR_W_TFR,CM_ECMR_C_IMR

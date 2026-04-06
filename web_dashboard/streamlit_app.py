@@ -1065,7 +1065,34 @@ if "edhs_nav_pending" in st.session_state:
 st.sidebar.markdown("### 📊 DHS Hybrid Plugin Platform")
 st.sidebar.markdown("---")
 
-nav_options = ["🏠 Home", "📖 Onboarding", "📡 DHS Program API", "📋 DHS Indicators", "📂 Microdata Analysis", "📊 Custom Dashboard", "⚙️ Settings"]
+
+def _hide_settings_from_menu() -> bool:
+    """Omit ⚙️ Settings from the sidebar when true. EDHS_SHOW_SETTINGS_NAV=true forces it back."""
+    if os.environ.get("EDHS_SHOW_SETTINGS_NAV", "").strip().lower() in ("1", "true", "yes"):
+        return False
+    if os.environ.get("EDHS_HIDE_SETTINGS_NAV", "").strip().lower() in ("1", "true", "yes"):
+        return True
+    if (os.environ.get("API_BASE_URL") or "").strip():
+        return True
+    if os.environ.get("EDHS_HIDE_BACKEND_CONNECTION", "").strip().lower() in ("1", "true", "yes"):
+        return True
+    return False
+
+
+_NAV_ALL = [
+    "🏠 Home",
+    "📖 Onboarding",
+    "📡 DHS Program API",
+    "📋 DHS Indicators",
+    "📂 Microdata Analysis",
+    "📊 Custom Dashboard",
+    "❓ FAQ",
+    "⚙️ Settings",
+]
+if _hide_settings_from_menu() and st.session_state.get("edhs_nav_page") == "⚙️ Settings":
+    st.session_state["edhs_nav_page"] = "🏠 Home"
+
+nav_options = [p for p in _NAV_ALL if p != "⚙️ Settings"] if _hide_settings_from_menu() else list(_NAV_ALL)
 if "edhs_nav_page" not in st.session_state:
     st.session_state["edhs_nav_page"] = "🏠 Home"
 
@@ -1124,6 +1151,21 @@ def _hide_choropleth_ui() -> bool:
     if os.environ.get("EDHS_HIDE_CHOROPLETH", "").strip().lower() in ("0", "false", "no"):
         return False
     if os.environ.get("EDHS_HIDE_CHOROPLETH", "").strip().lower() in ("1", "true", "yes"):
+        return True
+    return _hide_backend_connection_ui()
+
+
+def _hide_microdata_disaggregation_ui() -> bool:
+    """
+    Hide Microdata Analysis → section 3 disaggregation (grouped estimates by v106, etc.).
+
+    Set EDHS_HIDE_MICRODATA_DISAGGREGATION=true on the host. When backend is preconfigured
+    (API_BASE_URL / hidden sidebar), disaggregation is hidden by default unless
+    EDHS_SHOW_MICRODATA_DISAGGREGATION=true.
+    """
+    if os.environ.get("EDHS_SHOW_MICRODATA_DISAGGREGATION", "").strip().lower() in ("1", "true", "yes"):
+        return False
+    if os.environ.get("EDHS_HIDE_MICRODATA_DISAGGREGATION", "").strip().lower() in ("1", "true", "yes"):
         return True
     return _hide_backend_connection_ui()
 
@@ -1467,7 +1509,10 @@ if nav_choice == "🏠 Home":
         st.metric("DHS data loaded", has_dhs, "")
     st.markdown("---")
     st.markdown("#### Quick start")
-    q1, q2, q3, q4 = st.columns(4)
+    if _hide_settings_from_menu():
+        q1, q2, q3 = st.columns(3)
+    else:
+        q1, q2, q3, q4 = st.columns(4)
     with q1:
         if st.button("📡 Go to DHS Program API", use_container_width=True, key="nav_dhs"):
             st.session_state["edhs_nav_pending"] = "📡 DHS Program API"
@@ -1480,13 +1525,17 @@ if nav_choice == "🏠 Home":
         if st.button("📊 Go to Custom Dashboard", use_container_width=True, key="nav_dash"):
             st.session_state["edhs_nav_pending"] = "📊 Custom Dashboard"
             st.rerun()
-    with q4:
-        if st.button("⚙️ Go to Settings", use_container_width=True, key="nav_set"):
-            st.session_state["edhs_nav_pending"] = "⚙️ Settings"
-            st.rerun()
+    if not _hide_settings_from_menu():
+        with q4:
+            if st.button("⚙️ Go to Settings", use_container_width=True, key="nav_set"):
+                st.session_state["edhs_nav_pending"] = "⚙️ Settings"
+                st.rerun()
     st.markdown("---")
     st.markdown("**Need data?** Use the sidebar to fetch from the DHS Program API, try sample data, or upload a .dta/.sav file.")
-    st.caption("New to the platform? Use **Onboarding** in the sidebar for a step-by-step guide.")
+    st.caption(
+        "New to the platform? Use **Onboarding** in the sidebar for a step-by-step guide. "
+        "Questions about setup and deployment? See **❓ FAQ** in the sidebar."
+    )
     st.stop()
 
 elif nav_choice == "📖 Onboarding":
@@ -1528,7 +1577,10 @@ elif nav_choice == "📖 Onboarding":
     """)
     st.markdown("---")
     st.markdown("### Get started")
-    ob1, ob2, ob3, ob4 = st.columns(4)
+    if _hide_settings_from_menu():
+        ob1, ob2, ob3 = st.columns(3)
+    else:
+        ob1, ob2, ob3, ob4 = st.columns(4)
     with ob1:
         if st.button("📡 Go to DHS Program API", use_container_width=True, key="onb_nav_dhs"):
             st.session_state["edhs_nav_pending"] = "📡 DHS Program API"
@@ -1541,12 +1593,91 @@ elif nav_choice == "📖 Onboarding":
         if st.button("📊 Go to Custom Dashboard", use_container_width=True, key="onb_nav_dash"):
             st.session_state["edhs_nav_pending"] = "📊 Custom Dashboard"
             st.rerun()
-    with ob4:
-        if st.button("⚙️ Go to Settings", use_container_width=True, key="onb_nav_set"):
-            st.session_state["edhs_nav_pending"] = "⚙️ Settings"
-            st.rerun()
+    if not _hide_settings_from_menu():
+        with ob4:
+            if st.button("⚙️ Go to Settings", use_container_width=True, key="onb_nav_set"):
+                st.session_state["edhs_nav_pending"] = "⚙️ Settings"
+                st.rerun()
     st.markdown("---")
     st.caption("Data from [The DHS Program](https://dhsprogram.com). See methodology notes in each section.")
+    st.stop()
+
+elif nav_choice == "❓ FAQ":
+    st.markdown("## ❓ Frequently asked questions")
+    st.caption(
+        "Quick answers about this platform, the API, and DHS data. "
+        "For methodology, always follow [The DHS Program](https://www.dhsprogram.com/) guidance and survey documentation."
+    )
+    st.markdown("---")
+
+    with st.expander("What is this platform?", expanded=True):
+        st.markdown(
+            "The **DHS Hybrid Plugin Platform** is a web app with a **FastAPI backend** and a **Streamlit** dashboard. "
+            "You can browse **aggregated indicators** from the DHS Program API (STATcompiler-style), optionally work with "
+            "**survey microdata** when you have the right files and permissions, visualize results, and export for research."
+        )
+
+    with st.expander("What should I put in “Backend base URL” (if shown)?"):
+        st.markdown(
+            "Use the **root URL of this app’s own API** — the address where **your** EDHS/FastAPI service is running — "
+            "typically ending in **`/api/v1`** (for example `http://127.0.0.1:8000/api/v1` when developing locally).\n\n"
+            "**Do not** paste a `https://api.dhsprogram.com/...` link there. The public DHS API is reached **through** your backend "
+            "(proxy routes under `/dhs-api/...`), not as the dashboard’s “base URL.”\n\n"
+            "On many hosted deployments the sidebar is **preconfigured** via **`API_BASE_URL`**; you may not see this field."
+        )
+
+    with st.expander("Why does production use `http://127.0.0.1:8000/api/v1`?"):
+        st.markdown(
+            "When the **API and Streamlit run in the same container** (see `Dockerfile.webservice` / `run_webservice.sh`), "
+            "the dashboard talks to the API on **loopback** inside that container. End users still open the site with your "
+            "normal **https** URL; they never browse to `127.0.0.1` in the browser.\n\n"
+            "If the API runs as a **separate** service, set **`API_BASE_URL`** to that service’s public API base (with `/api/v1`), not localhost."
+        )
+
+    with st.expander("Where does my DHS Program API key go?"):
+        st.markdown(
+            "The host can set **`DHS_PROGRAM_API_KEY`** on the server. You may optionally override with **DHS API key** in the "
+            "sidebar when that field is visible, or via the **`X-DHS-API-Key`** header for API clients. "
+            "Get a key from [The DHS Program API](https://api.dhsprogram.com/)."
+        )
+
+    with st.expander("“Backend not reached” or connection refused — what should I check?"):
+        st.markdown(
+            "1. **Same-container deploy:** Ensure **Docker Command** in Render is **empty** so the image runs **`run_webservice.sh`** "
+            "(Uvicorn on port **8000** + Streamlit on **`PORT`**).\n"
+            "2. **Logs:** Confirm **Uvicorn** starts before traffic hits the UI.\n"
+            "3. **Timeout:** First health check can be slow; optional **`EDHS_HEALTHCHECK_TIMEOUT`** can be increased.\n"
+            "4. **Split services:** If Streamlit and API are on different hosts, **`API_BASE_URL`** must point to the real API URL, not `127.0.0.1`."
+        )
+
+    with st.expander("DHS Program API vs microdata — what’s the difference?"):
+        st.markdown(
+            "**DHS Program API** — Published aggregated indicators (countries, years, indicator IDs). No survey file upload required.\n\n"
+            "**Microdata** — Row-level analysis using `.dta` / `.sav` (or similar) in a **session**; supports weighted estimates, "
+            "disaggregation, and maps when boundaries are available. Follow your data-use agreement."
+        )
+
+    with st.expander("Why is Settings missing from the menu?"):
+        st.markdown(
+            "On deployments where the host sets **`API_BASE_URL`** (or related flags), **Settings** may be hidden "
+            "to simplify the experience. Administrators can set **`EDHS_SHOW_SETTINGS_NAV=true`** to show it again."
+        )
+
+    with st.expander("What about maps (choropleth)?"):
+        st.markdown(
+            "Choropleth needs **admin boundary** data on the server under **`ADMIN_BOUNDARIES_ROOT`**. "
+            "If boundaries are missing, map actions may return 404 — the UI may hide map controls when not deployed. "
+            "Use **`EDHS_SHOW_CHOROPLETH=true`** to force map controls when you have added boundary files."
+        )
+
+    with st.expander("How do I cite DHS data?"):
+        st.markdown(
+            "Use the **citation** or **methodology** notes shown in each section where available, and follow "
+            "[The DHS Program](https://www.dhsprogram.com/) guidance for official publications."
+        )
+
+    st.markdown("---")
+    st.markdown("**Still stuck?** Check deployment logs, confirm your Dockerfile and environment variables, and ensure the API process is healthy.")
     st.stop()
 
 elif nav_choice == "📡 DHS Program API":
@@ -2325,51 +2456,54 @@ with st.expander("Advanced options (DHS weights and admin unit columns)", expand
         micro_admin = st.text_input("Microdata admin column", value="admin1_code")
         boundary_admin = st.text_input("Boundary admin column", value="admin_id")
 
-st.markdown("### 3. Disaggregate and compute the indicator")
+if _hide_microdata_disaggregation_ui():
+    st.markdown("### 3. Compute the indicator")
+else:
+    st.markdown("### 3. Disaggregate and compute the indicator")
 
-# Disaggregation
-st.subheader("Disaggregation")
-disagg_options = {
-    "None": None,
-    "Residence (v025)": "v025",
-    "Region (admin1_code)": "admin1_code",
-    "Education (v106)": "v106",
-    "Wealth quintile (v190)": "v190",
-    "Other": "other",
-}
-disagg_choice = st.selectbox("Disaggregate by", list(disagg_options.keys()))
-group_by_column: Optional[str] = None
-if disagg_options[disagg_choice] == "other":
-    group_by_column = st.text_input("Column name for grouping", placeholder="e.g. v024")
-elif disagg_options[disagg_choice]:
-    group_by_column = disagg_options[disagg_choice]
+    # Disaggregation
+    st.subheader("Disaggregation")
+    disagg_options = {
+        "None": None,
+        "Residence (v025)": "v025",
+        "Region (admin1_code)": "admin1_code",
+        "Education (v106)": "v106",
+        "Wealth quintile (v190)": "v190",
+        "Other": "other",
+    }
+    disagg_choice = st.selectbox("Disaggregate by", list(disagg_options.keys()))
+    group_by_column: Optional[str] = None
+    if disagg_options[disagg_choice] == "other":
+        group_by_column = st.text_input("Column name for grouping", placeholder="e.g. v024")
+    elif disagg_options[disagg_choice]:
+        group_by_column = disagg_options[disagg_choice]
 
-if group_by_column and st.button("Compute disaggregated"):
-    try:
-        grouped = api_compute_grouped(
-            base_url,
-            tenant_id,
-            bearer_token or None,
-            compute_session_id,
-            indicator_id,
-            group_by_column,
-            use_weights,
-            weight_var,
-        )
-        st.session_state["edhs_last_grouped"] = grouped
-    except requests.HTTPError as e:
-        if e.response is not None and e.response.status_code == 404:
-            detail = "Session not found or expired."
-            try:
-                body = e.response.json()
-                detail = body.get("detail", detail)
-            except Exception:
-                pass
-            st.error(f"{detail} Create a new session from the sidebar (**Try with sample data** or upload a file).")
-        else:
+    if group_by_column and st.button("Compute disaggregated"):
+        try:
+            grouped = api_compute_grouped(
+                base_url,
+                tenant_id,
+                bearer_token or None,
+                compute_session_id,
+                indicator_id,
+                group_by_column,
+                use_weights,
+                weight_var,
+            )
+            st.session_state["edhs_last_grouped"] = grouped
+        except requests.HTTPError as e:
+            if e.response is not None and e.response.status_code == 404:
+                detail = "Session not found or expired."
+                try:
+                    body = e.response.json()
+                    detail = body.get("detail", detail)
+                except Exception:
+                    pass
+                st.error(f"{detail} Create a new session from the sidebar (**Try with sample data** or upload a file).")
+            else:
+                st.error(str(e))
+        except Exception as e:
             st.error(str(e))
-    except Exception as e:
-        st.error(str(e))
 
 st.divider()
 
