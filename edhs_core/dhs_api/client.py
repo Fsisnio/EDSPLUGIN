@@ -20,6 +20,24 @@ _DHS_RETRYABLE_STATUS = frozenset({429, 502, 503})
 _DHS_MAX_GET_ATTEMPTS = 4
 
 
+class DhsProgramApiUpstreamError(Exception):
+    """
+    Raised when api.dhsprogram.com responds with a non-success HTTP status.
+    str(self) is safe for logs and JSON responses (never includes the API key or full request URL).
+    """
+
+    __slots__ = ("status_code", "resource")
+
+    def __init__(self, status_code: int, resource: str) -> None:
+        self.status_code = int(status_code)
+        self.resource = (resource or "data").lstrip("/")
+        super().__init__(
+            f"The DHS Program API returned HTTP {self.status_code} for '/{self.resource}' "
+            "and did not complete the request; the upstream service may be overloaded or unavailable. "
+            "Please try again in a few minutes."
+        )
+
+
 def _sanitize_api_key(key: str) -> str:
     """Ensure API key has no path suffix (e.g. SPEROF-176817/test/mock-session -> SPEROF-176817)."""
     return key.split("/")[0].strip() if key else ""
@@ -65,7 +83,7 @@ class DhsProgramApiClient:
                         )
                         time.sleep(wait)
                         continue
-                    raise
+                    raise DhsProgramApiUpstreamError(code, path) from None
 
     def get_indicators(
         self,

@@ -9,19 +9,34 @@ import csv
 import io
 import json
 import logging
-from typing import Any, Dict, Optional
+from typing import Any, Dict, NoReturn, Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
 
 from ..config import settings
-from ..dhs_api.client import DhsProgramApiClient
+from ..dhs_api.client import DhsProgramApiClient, DhsProgramApiUpstreamError
 from ..dhs_api.country_codes import countries_csv_to_dhs2
 from ..dhs_api.data_pipeline import process_dhs_data_response
 
 logger = logging.getLogger("edhs_core.dhs_api")
 
 router = APIRouter(prefix="/dhs-api", tags=["DHS Program API"])
+
+
+def _fail_dhs_proxy(log_message: str, exc: BaseException) -> NoReturn:
+    """Log and map client failures to HTTP 502 without leaking API keys or full upstream URLs."""
+    if isinstance(exc, DhsProgramApiUpstreamError):
+        logger.error("%s: upstream HTTP %s (resource /%s)", log_message, exc.status_code, exc.resource)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from None
+    logger.exception(log_message)
+    raise HTTPException(
+        status_code=status.HTTP_502_BAD_GATEWAY,
+        detail="DHS Program API request failed due to an unexpected error.",
+    ) from None
 
 
 def _get_client(x_dhs_api_key: Optional[str] = Header(default=None, alias="X-DHS-API-Key")) -> DhsProgramApiClient:
@@ -56,11 +71,7 @@ async def dhs_list_indicators(
     except HTTPException:
         raise
     except Exception as e:
-        logger.exception("DHS API indicators request failed")
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"DHS Program API request failed: {e}",
-        ) from e
+        _fail_dhs_proxy("DHS API indicators request failed", e)
 
 
 @router.get("/countries")
@@ -90,11 +101,7 @@ async def dhs_list_countries(
     except HTTPException:
         raise
     except Exception as e:
-        logger.exception("DHS API countries request failed")
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"DHS Program API request failed: {e}",
-        ) from e
+        _fail_dhs_proxy("DHS API countries request failed", e)
 
 
 @router.get("/surveys")
@@ -128,11 +135,7 @@ async def dhs_list_surveys(
     except HTTPException:
         raise
     except Exception as e:
-        logger.exception("DHS API surveys request failed")
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"DHS Program API request failed: {e}",
-        ) from e
+        _fail_dhs_proxy("DHS API surveys request failed", e)
 
 
 @router.get("/data")
@@ -170,11 +173,7 @@ async def dhs_get_data(
     except HTTPException:
         raise
     except Exception as e:
-        logger.exception("DHS API data request failed")
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"DHS Program API request failed: {e}",
-        ) from e
+        _fail_dhs_proxy("DHS API data request failed", e)
 
 
 @router.get("/data/fetch")
@@ -223,11 +222,7 @@ async def dhs_fetch_data_processed(
     except HTTPException:
         raise
     except Exception as e:
-        logger.exception("DHS API data fetch failed")
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"DHS Program API request failed: {e}",
-        ) from e
+        _fail_dhs_proxy("DHS API data fetch failed", e)
 
     if post_filter_years:
         result = process_dhs_data_response(result, y0, y1, dedupe=dedupe)
@@ -259,11 +254,7 @@ async def dhs_export_data_csv(
     except HTTPException:
         raise
     except Exception as e:
-        logger.exception("DHS API data export failed")
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"DHS Program API request failed: {e}",
-        ) from e
+        _fail_dhs_proxy("DHS API data export (csv) failed", e)
 
     data = result.get("Data", [])
     if not data:
@@ -313,11 +304,7 @@ async def dhs_export_data_json(
     except HTTPException:
         raise
     except Exception as e:
-        logger.exception("DHS API data export failed")
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"DHS Program API request failed: {e}",
-        ) from e
+        _fail_dhs_proxy("DHS API data export (json) failed", e)
 
     data = result.get("Data", [])
     if not data:
