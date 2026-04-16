@@ -5,6 +5,7 @@ Fetches indicators, countries, surveys, and indicator data.
 """
 
 import logging
+import time
 from typing import Any, Dict, Optional
 from urllib.parse import quote
 
@@ -13,6 +14,10 @@ import httpx
 logger = logging.getLogger("edhs_core.dhs_api")
 
 DHS_API_BASE = "https://api.dhsprogram.com/rest/dhs"
+
+# Transient upstream errors — short backoff before giving up (common during DHS API maintenance / load).
+_DHS_RETRYABLE_STATUS = frozenset({429, 502, 503})
+_DHS_MAX_GET_ATTEMPTS = 4
 
 
 def _sanitize_api_key(key: str) -> str:
@@ -42,9 +47,25 @@ class DhsProgramApiClient:
         """GET request to DHS Program API."""
         url = self._url(path, **params)
         with httpx.Client(timeout=60) as client:
-            resp = client.get(url)
-            resp.raise_for_status()
-            return resp.json()
+            for attempt in range(_DHS_MAX_GET_ATTEMPTS):
+                resp = client.get(url)
+                try:
+                    resp.raise_for_status()
+                    return resp.json()
+                except httpx.HTTPStatusError as e:
+                    code = e.response.status_code
+                    if code in _DHS_RETRYABLE_STATUS and attempt < _DHS_MAX_GET_ATTEMPTS - 1:
+                        wait = min(2**attempt, 8)
+                        logger.warning(
+                            "DHS Program API returned %s (attempt %s/%s); retrying in %ss",
+                            code,
+                            attempt + 1,
+                            _DHS_MAX_GET_ATTEMPTS,
+                            wait,
+                        )
+                        time.sleep(wait)
+                        continue
+                    raise
 
     def get_indicators(
         self,

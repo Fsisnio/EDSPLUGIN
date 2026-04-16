@@ -1157,6 +1157,57 @@ def _hide_backend_connection_ui() -> bool:
     return False
 
 
+def _user_facing_request_error_message(exc: BaseException) -> str:
+    """
+    Text for Streamlit error/info alerts when backend HTTP calls fail.
+    If the backend is host-preconfigured (typical production), do not show internal
+    base URLs or raw requests status lines (e.g. 502 for url: http://127.0.0.1:8000/...).
+    """
+    hide = _hide_backend_connection_ui()
+
+    if hide and isinstance(exc, requests.HTTPError):
+        resp = exc.response
+        code = resp.status_code if resp is not None else None
+        if code in (502, 503):
+            return (
+                "The DHS Program data service is temporarily unavailable, so this request could not be completed. "
+                "Please try again in a few minutes."
+            )
+        if code in (504, 408):
+            return (
+                "The data request took too long. Try selecting fewer countries or indicators, or try again later."
+            )
+        if code == 404:
+            return "No data was found for the selections you made, or the session has expired."
+        if code in (401, 403):
+            return "This request was not authorized. Contact your administrator if the problem continues."
+        if code == 429:
+            return "The service is busy right now. Please wait a moment and try again."
+        if code is not None and code >= 500:
+            return (
+                "Something went wrong on the server while loading data. "
+                "Please try again in a few minutes."
+            )
+        return "This request could not be completed. Please try again or adjust your selections."
+
+    if hide and isinstance(exc, requests.RequestException):
+        return "Could not reach the data service. Please try again in a few minutes."
+
+    if isinstance(exc, requests.HTTPError) and exc.response is not None:
+        try:
+            body = exc.response.json()
+            d = body.get("detail")
+            if d is not None:
+                return str(d) if not isinstance(d, list) else repr(d)
+        except Exception:
+            pass
+
+    if hide:
+        return "Something went wrong. Please try again, or contact support if the issue continues."
+
+    return str(exc)
+
+
 def _hide_choropleth_ui() -> bool:
     """
     Hide map / spatial aggregation controls when boundaries are usually absent (404 on /spatial/aggregate).
@@ -1311,7 +1362,7 @@ if st.sidebar.button(f"Fetch data for {country_code_dhs or 'country'} from DHS A
         )
         st.rerun()
     except Exception as e:
-        st.sidebar.error(str(e))
+        st.sidebar.error(_user_facing_request_error_message(e))
 
 st.sidebar.caption("Or use sample data (Benin microdata):")
 # Try with sample data (clearer label)
@@ -1342,7 +1393,7 @@ if st.sidebar.button("Try with sample data (Benin BJBR71FL.DTA if available)", t
         st.sidebar.success(f"Session ready: `{resp['session_id'][:12]}…`")
         st.rerun()
     except Exception as e:
-        st.sidebar.error(str(e))
+        st.sidebar.error(_user_facing_request_error_message(e))
 
 # Import from external API / URL
 st.sidebar.caption(
@@ -1389,20 +1440,9 @@ if st.sidebar.button("Load from URL", type="primary", key="load_from_url_btn"):
             st.sidebar.success(f"Session from URL: `{resp['session_id'][:12]}…`")
             st.rerun()
         except requests.HTTPError as e:
-            detail = str(e)
-            if e.response is not None:
-                try:
-                    body = e.response.json()
-                    d = body.get("detail")
-                    if isinstance(d, str):
-                        detail = d
-                    elif isinstance(d, list) and d and isinstance(d[0], dict) and "msg" in d[0]:
-                        detail = "; ".join(item.get("msg", str(item)) for item in d[:3])
-                except Exception:
-                    pass
-            st.sidebar.error(detail)
+            st.sidebar.error(_user_facing_request_error_message(e))
         except Exception as e:
-            st.sidebar.error(str(e))
+            st.sidebar.error(_user_facing_request_error_message(e))
 
 # File upload
 uploaded_file = st.sidebar.file_uploader(
@@ -1736,7 +1776,10 @@ elif nav_choice == "📡 DHS Program API":
             st.success(f"Automatically loaded {len(dhs_auto.get('Data', []))} records.")
             st.rerun()
         except Exception as e:
-            st.info("Automatic DHS fetch was skipped or failed; use the form below. " + str(e))
+            st.info(
+                "Automatic DHS fetch was skipped or failed; use the form below. "
+                + _user_facing_request_error_message(e)
+            )
 
     with st.expander("Fetch data (quick)", expanded=True):
         default_iso = ["SEN", "KEN", "BEN", "GHA"]
@@ -1818,7 +1861,7 @@ elif nav_choice == "📡 DHS Program API":
                     st.success(f"Retrieved {len(dhs_resp.get('Data', []))} records.")
                     st.rerun()
                 except Exception as e:
-                    st.error(str(e))
+                    st.error(_user_facing_request_error_message(e))
         if _DHS_RESEARCH_AVAILABLE and (SUGGESTED_BY_TOPIC or COMPARISON_TEMPLATES):
             with st.expander("💡 Suggested indicators & templates", expanded=False):
                 for topic, inds in list(SUGGESTED_BY_TOPIC.items())[:3]:
@@ -1874,7 +1917,7 @@ elif nav_choice == "📡 DHS Program API":
                         st.success(f"Retrieved {len(dhs_resp.get('Data', []))} records.")
                         st.rerun()
                     except Exception as e:
-                        st.error(str(e))
+                        st.error(_user_facing_request_error_message(e))
                 else:
                     st.error("Enter country codes and indicator IDs.")
     if st.session_state.get("edhs_dhs_api_data"):
@@ -1887,7 +1930,7 @@ elif nav_choice == "📡 DHS Program API":
                 st.session_state["edhs_dhs_indicators"] = ind_resp
                 st.rerun()
             except Exception as e:
-                st.error(str(e))
+                st.error(_user_facing_request_error_message(e))
         if st.session_state.get("edhs_dhs_indicators"):
             ind_list = st.session_state["edhs_dhs_indicators"].get("Data", [])
             if ind_list:
@@ -2178,7 +2221,7 @@ elif nav_choice == "📊 Custom Dashboard":
                     else:
                         st.dataframe(df.head(15), use_container_width=True)
                 except Exception as e:
-                    st.error(f"Error rendering {w['title']}: {e}")
+                    st.error(f"Error rendering {w['title']}: {_user_facing_request_error_message(e)}")
 
         if st.button("Clear all widgets", key="dash_clear"):
             st.session_state["edhs_dashboard_widgets"] = []
@@ -2239,7 +2282,7 @@ elif nav_choice == "📂 Microdata Analysis":
                     st.success("Session created.")
                     st.rerun()
                 except Exception as e:
-                    st.error(str(e))
+                    st.error(_user_facing_request_error_message(e))
         st.markdown("---")
 
 if nav_choice == "📂 Microdata Analysis" and not compute_session_id:
@@ -2331,7 +2374,7 @@ if nav_choice == "📂 Microdata Analysis" and not compute_session_id:
                 st.success("Session created. You can now select an indicator and compute.")
                 st.rerun()
             except Exception as e:
-                st.error(f"Could not create session: {e}")
+                st.error(f"Could not create session: {_user_facing_request_error_message(e)}")
 
     st.caption(
         "Fetched API data also appears **above** when you load it from the **DHS Program API** menu (or sidebar fetch)."
@@ -2348,10 +2391,13 @@ if "edhs_indicators" not in st.session_state:
             base_url, tenant_id, bearer_token or None
         )
     except Exception as e:
-        st.error(
-            "**Could not load indicators.** Check that the backend is running and the sidebar API URL is correct, then try again."
-        )
-        st.caption(str(e))
+        if _hide_backend_connection_ui():
+            st.error("Could not load the indicator list from the server. Please try again in a few minutes.")
+        else:
+            st.error(
+                "**Could not load indicators.** Check that the backend is running and the sidebar API URL is correct, then try again."
+            )
+        st.caption(_user_facing_request_error_message(e))
         if st.button("Retry", key="retry_indicators"):
             st.session_state.pop("edhs_indicators", None)
             st.rerun()
@@ -2523,9 +2569,9 @@ else:
                     pass
                 st.error(f"{detail} Create a new session from the sidebar (**Try with sample data** or upload a file).")
             else:
-                st.error(str(e))
+                st.error(_user_facing_request_error_message(e))
         except Exception as e:
-            st.error(str(e))
+            st.error(_user_facing_request_error_message(e))
 
 st.divider()
 
@@ -2556,7 +2602,7 @@ with cols_btn[0]:
             st.session_state["edhs_last_result"] = result
             st.session_state["edhs_last_geojson"] = None
         except Exception as e:
-            st.error(str(e))
+            st.error(_user_facing_request_error_message(e))
 
 # Compute multiple indicators into a table
 with cols_btn[1]:
@@ -2598,7 +2644,7 @@ with cols_btn[1]:
                     }
                 )
             except Exception as e:
-                st.error(f"Error for {lbl}: {e}")
+                st.error(f"Error for {lbl}: {_user_facing_request_error_message(e)}")
         if rows_multi:
             st.session_state["edhs_last_multi"] = rows_multi
 
@@ -2624,7 +2670,7 @@ if not _choropleth_hidden:
                 st.session_state["edhs_last_spatial_response"] = resp
                 st.session_state["edhs_last_result"] = None
             except Exception as e:
-                st.error(str(e))
+                st.error(_user_facing_request_error_message(e))
 
 # Display last scalar result
 if st.session_state.get("edhs_last_result"):
@@ -2789,7 +2835,7 @@ else:
                     }
                 )
             except Exception as e:
-                st.error(f"Error for {lbl}: {e}")
+                st.error(f"Error for {lbl}: {_user_facing_request_error_message(e)}")
         if rows_cmp:
             st.session_state["edhs_last_multi_country"] = {
                 "indicator_id": indicator_id,
@@ -2906,7 +2952,7 @@ with st.expander("Fetch more / browse DHS Program API catalog", expanded=False):
             st.success(f"Loaded {len(dhs_resp.get('Data', []))} records for Benin.")
             st.rerun()
         except Exception as e:
-            st.error(str(e))
+            st.error(_user_facing_request_error_message(e))
 
     if _DHS_RESEARCH_AVAILABLE and (SUGGESTED_BY_TOPIC or COMPARISON_TEMPLATES):
         with st.expander("💡 Suggested indicators & quick templates", expanded=False):
@@ -2986,16 +3032,9 @@ with st.expander("Fetch more / browse DHS Program API catalog", expanded=False):
                 st.success(f"Retrieved {len(dhs_resp.get('Data', []))} records.")
                 st.rerun()
             except requests.HTTPError as e:
-                detail = str(e)
-                if e.response is not None:
-                    try:
-                        body = e.response.json()
-                        detail = body.get("detail", detail)
-                    except Exception:
-                        pass
-                st.error(detail)
+                st.error(_user_facing_request_error_message(e))
             except Exception as e:
-                st.error(str(e))
+                st.error(_user_facing_request_error_message(e))
 
     if st.session_state.get("edhs_dhs_api_data"):
         _dc = st.session_state["edhs_dhs_api_data"].get("Data") or []
@@ -3017,7 +3056,7 @@ with st.expander("Fetch more / browse DHS Program API catalog", expanded=False):
                 st.session_state["edhs_dhs_indicators"] = ind_resp
                 st.rerun()
             except Exception as e:
-                st.error(str(e))
+                st.error(_user_facing_request_error_message(e))
 
         if st.session_state.get("edhs_dhs_indicators"):
             ind_data = st.session_state["edhs_dhs_indicators"]
